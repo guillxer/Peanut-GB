@@ -41,11 +41,11 @@
 # define __has_include(x) 0
 #endif
 
-#include <stdlib.h>	/* Required for abort */
-#include <stdbool.h>	/* Required for bool types */
-#include <stdint.h>	/* Required for int types */
-#include <string.h>	/* Required for memset */
-#include <time.h>	/* Required for tm struct */
+//#include <stdlib.h>	/* Required for abort */
+//#include <stdbool.h>	/* Required for bool types */
+//#include <stdint.h>	/* Required for int types */
+//#include <string.h>	/* Required for memset */
+//#include <time.h>	/* Required for tm struct */
 
 /**
 * If PEANUT_GB_IS_LITTLE_ENDIAN is positive, then Peanut-GB will be configured
@@ -97,12 +97,12 @@
 
 /* Adds more code to improve LCD rendering accuracy. */
 #ifndef PEANUT_GB_HIGH_LCD_ACCURACY
-# define PEANUT_GB_HIGH_LCD_ACCURACY 1
+# define PEANUT_GB_HIGH_LCD_ACCURACY 0
 #endif
 
 /* Use intrinsic functions. This may produce smaller and faster code. */
 #ifndef PEANUT_GB_USE_INTRINSICS
-# define PEANUT_GB_USE_INTRINSICS 1
+# define PEANUT_GB_USE_INTRINSICS 0
 #endif
 
 /* Only include function prototypes. At least one file must *not* have this
@@ -277,7 +277,7 @@
 #  /* __assume is not available before VC6. */
 #  define PGB_UNREACHABLE() __assume(0)
 # else
-#  define PGB_UNREACHABLE() abort()
+#  define PGB_UNREACHABLE() //abort()
 # endif
 #endif /* !defined(PGB_UNREACHABLE) */
 
@@ -569,6 +569,22 @@ union cart_rtc
 	uint8_t bytes[5];
 };
 
+struct priv_t
+{
+	/* Pointer to allocated memory holding GB file. */
+	uint8_t* rom;
+	/* Pointer to allocated memory holding save file. */
+	uint8_t* cart_ram;
+	/* Size of the cart_ram in bytes. */
+	size_t save_size;
+	/* Pointer to boot ROM binary if available. */
+	uint8_t* bootrom;
+
+	/* Colour palette for each BG, OBJ0, and OBJ1. */
+	uint16_t selected_palette[3][4];
+	uint16_t fb[LCD_HEIGHT][LCD_WIDTH];
+};
+
 /**
  * Emulator context.
  *
@@ -737,7 +753,7 @@ struct gb_s
 		};
 
 		/* Implementation defined data. Set to NULL if not required. */
-		void *priv;
+		struct priv_t* priv;
 	} direct;
 };
 
@@ -984,7 +1000,13 @@ void __gb_write(struct gb_s *gb, uint_fast16_t addr, uint8_t val)
 	case 0x7:
 		val &= 1;
 		if(gb->mbc == 3 && val && gb->cart_mode_select == 0)
-			memcpy(&gb->rtc_latched.bytes, &gb->rtc_real.bytes, sizeof(gb->rtc_latched.bytes));
+		{
+			for (int i = 0; i < 5; ++i)
+			{
+				gb->rtc_latched.bytes[i] = gb->rtc_real.bytes[i];
+			}
+		}
+		//memcpy(&gb->rtc_latched.bytes, &gb->rtc_real.bytes, sizeof(gb->rtc_latched.bytes));
 
 		/* Set banking mode select. */
 		gb->cart_mode_select = val;
@@ -1445,7 +1467,11 @@ struct sprite_data {
 	uint8_t x;
 };
 
+
+#define SIMPLE_TEST 0
+
 #if PEANUT_GB_HIGH_LCD_ACCURACY
+#if !SIMPLE_TEST
 static int compare_sprites(const struct sprite_data *const sd1, const struct sprite_data *const sd2)
 {
 	int x_res;
@@ -1457,10 +1483,40 @@ static int compare_sprites(const struct sprite_data *const sd1, const struct spr
 	return (int)sd1->sprite_number - (int)sd2->sprite_number;
 }
 #endif
+#endif
+
+void lcd_draw_line(
+	struct gb_s* gb,
+	const uint8_t* pixels,
+	const uint_fast8_t line)
+{
+	//struct priv_t* priv = gb->direct.priv;
+	for (unsigned int x = 0; x < LCD_WIDTH; x++)
+	{
+		gb->direct.priv->fb[line][x] = gb->direct.priv->selected_palette[(pixels[x] & LCD_PALETTE_ALL) >> 4][pixels[x] & 3];
+	}
+}
 
 void __gb_draw_line(struct gb_s *gb)
 {
-	uint8_t pixels[160] = {0};
+#if SIMPLE_TEST
+	unsigned char pixels[160];
+	for(int i = 0 ; i < 160; ++i)
+	{
+		pixels[i] = i;
+	}
+	for(int j =0; j < 160; ++j)
+	{
+		gb->direct.priv->fb[gb->hram_io[IO_LY]][j] = pixels[j];
+	}
+	//lcd_draw_line(gb, pixels, gb->hram_io[IO_LY]);
+
+#else
+	unsigned char pixels[160];
+	for(int i = 0; i < 160; ++i)
+	{
+		pixels[i] = i;
+	}
 
 	/* If LCD not initialised by front-end, don't render anything. */
 	if(gb->display.lcd_draw_line == NULL)
@@ -1637,8 +1693,9 @@ void __gb_draw_line(struct gb_s *gb)
 		gb->display.window_clear++; // advance window line
 	}
 
+	bool bDrawSprites = true;
 	// draw sprites
-	if(gb->hram_io[IO_LCDC] & LCDC_OBJ_ENABLE)
+	if(gb->hram_io[IO_LCDC] & LCDC_OBJ_ENABLE && bDrawSprites)
 	{
 		uint8_t sprite_number;
 #if PEANUT_GB_HIGH_LCD_ACCURACY
@@ -1779,8 +1836,15 @@ void __gb_draw_line(struct gb_s *gb)
 			}
 		}
 	}
-
-	gb->display.lcd_draw_line(gb, pixels, gb->hram_io[IO_LY]);
+	// crash here
+	for(int j =0; j < 160; ++j)
+	{
+		unsigned short pixelColor = gb->direct.priv->selected_palette[(pixels[j] & LCD_PALETTE_ALL) >> 4][pixels[j] & 3];
+		gb->direct.priv->fb[gb->hram_io[IO_LY]][j] = pixelColor;
+	}
+	//gb->display.lcd_draw_line(gb, pixels, gb->hram_io[IO_LY]);
+	//lcd_draw_line(gb, pixels, gb->hram_io[IO_LY]);
+#endif
 }
 #endif
 
@@ -1819,6 +1883,7 @@ void __gb_step_cpu(struct gb_s *gb)
 	/* If gb_halt is positive, then an interrupt must have occurred by the
 	 * time we reach here, because on HALT, we jump to the next interrupt
 	 * immediately. */
+	 
 	while(gb->gb_halt || (gb->gb_ime &&
 			gb->hram_io[IO_IF] & gb->hram_io[IO_IE] & ANY_INTR))
 	{
@@ -3328,7 +3393,7 @@ void __gb_step_cpu(struct gb_s *gb)
 				gb->rtc_real.reg.high ^= 1;
 			}
 		}
-
+	
 		/* Check serial transmission. */
 		if(gb->hram_io[IO_SC] & SERIAL_SC_TX_START)
 		{
@@ -3470,8 +3535,8 @@ void __gb_step_cpu(struct gb_s *gb)
 						!gb->display.interlace_count;
 				}
 #endif
-                                /* If halted forever, then return on VBLANK. */
-                                if(gb->gb_halt && !gb->hram_io[IO_IE])
+                /* If halted forever, then return on VBLANK. */
+                if(gb->gb_halt && !gb->hram_io[IO_IE])
 					break;
 			}
 			/* Start of normal Line (not in VBLANK) */
@@ -3531,9 +3596,10 @@ void __gb_step_cpu(struct gb_s *gb)
 void gb_run_frame(struct gb_s *gb)
 {
 	gb->gb_frame = false;
-
 	while(!gb->gb_frame)
+	{
 		__gb_step_cpu(gb);
+	}
 }
 
 int gb_get_save_size_s(struct gb_s *gb, size_t *ram_size)
@@ -3648,7 +3714,12 @@ void gb_reset(struct gb_s *gb)
 
 		__gb_write(gb, 0xFF26, 0xF1);
 
-		memset(gb->vram, 0x00, VRAM_SIZE);
+
+		for (int i = 0; i < VRAM_SIZE; ++i){
+			gb->vram[0] = 0;
+		}
+
+		//memset(gb->vram, 0x00, VRAM_SIZE);
 	}
 	else
 	{
@@ -3698,7 +3769,7 @@ enum gb_init_error_e gb_init(struct gb_s *gb,
 			     uint8_t (*gb_cart_ram_read)(struct gb_s*, const uint_fast32_t),
 			     void (*gb_cart_ram_write)(struct gb_s*, const uint_fast32_t, const uint8_t),
 			     void (*gb_error)(struct gb_s*, const enum gb_error_e, const uint16_t),
-			     void *priv)
+			     struct priv_t *priv)
 {
 	const uint16_t mbc_location = 0x0147;
 	const uint16_t bank_count_location = 0x0148;
@@ -3857,6 +3928,7 @@ void gb_tick_rtc(struct gb_s *gb)
 	return;
 }
 
+#if 0
 void gb_set_rtc(struct gb_s *gb, const struct tm * const time)
 {
 	gb->rtc_real.bytes[0] = time->tm_sec;
@@ -3865,6 +3937,7 @@ void gb_set_rtc(struct gb_s *gb, const struct tm * const time)
 	gb->rtc_real.bytes[3] = time->tm_yday & 0xFF; /* Low 8 bits of day counter. */
 	gb->rtc_real.bytes[4] = time->tm_yday >> 8; /* High 1 bit of day counter. */
 }
+#endif
 #endif // PEANUT_GB_HEADER_ONLY
 
 /** Function prototypes: Required functions **/
@@ -3892,7 +3965,7 @@ enum gb_init_error_e gb_init(struct gb_s *gb,
 			     uint8_t (*gb_cart_ram_read)(struct gb_s*, const uint_fast32_t),
 			     void (*gb_cart_ram_write)(struct gb_s*, const uint_fast32_t, const uint8_t),
 			     void (*gb_error)(struct gb_s*, const enum gb_error_e, const uint16_t),
-			     void *priv);
+			     struct priv_t *priv);
 
 /**
  * Executes the emulator and runs for the duration of time equal to one frame.
@@ -4014,8 +4087,9 @@ void gb_tick_rtc(struct gb_s *gb);
  * \param gb	An initialised emulator context. Must not be NULL.
  * \param time	Time structure with date and time.
  */
+ #if 0
 void gb_set_rtc(struct gb_s *gb, const struct tm * const time);
-
+#endif
 /**
  * Use boot ROM on reset. gb_reset() must be called for this to take affect.
  * \param gb 	An initialised emulator context. Must not be NULL.

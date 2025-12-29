@@ -6,21 +6,17 @@
  * SDL2 to draw the screen and get input.
  */
 
+
+#if 0
+#include <math.h>
+
 #include <stdint.h>
 #include <stdlib.h>
 
 #include "SDL.h"
 
-#if defined(ENABLE_SOUND_BLARGG)
-#	include "blargg_apu/audio.h"
-#elif defined(ENABLE_SOUND_MINIGB)
-#	include "minigb_apu/minigb_apu.h"
-#endif
 
-uint8_t audio_read(uint16_t addr);
-void audio_write(uint16_t addr, uint8_t val);
-
-#include "../../peanut_gb.h"
+#include "peanut_gb.h"
 
 enum {
 	LOG_CATERGORY_PEANUTSDL = SDL_LOG_CATEGORY_CUSTOM
@@ -30,7 +26,6 @@ struct priv_t
 {
 	/* Window context used to generate message boxes. */
 	SDL_Window *win;
-
 	/* Pointer to allocated memory holding GB file. */
 	uint8_t *rom;
 	/* Pointer to allocated memory holding save file. */
@@ -44,8 +39,6 @@ struct priv_t
 	uint16_t selected_palette[3][4];
 	uint16_t fb[LCD_HEIGHT][LCD_WIDTH];
 };
-
-static struct minigb_apu_ctx apu;
 
 /**
  * Returns a byte from the ROM file at the given address.
@@ -79,21 +72,6 @@ uint8_t gb_bootrom_read(struct gb_s *gb, const uint_fast16_t addr)
 {
 	const struct priv_t * const p = gb->direct.priv;
 	return p->bootrom[addr];
-}
-
-uint8_t audio_read(uint16_t addr)
-{
-	return minigb_apu_audio_read(&apu, addr);
-}
-
-void audio_write(uint16_t addr, uint8_t val)
-{
-	minigb_apu_audio_write(&apu, addr, val);
-}
-
-void audio_callback(void *ptr, uint8_t *data, int len)
-{
-	minigb_apu_audio_callback(&apu, (void *)data);
 }
 
 void read_cart_ram_file(const char *save_file_name, uint8_t **dest,
@@ -382,180 +360,6 @@ void auto_assign_palette(struct priv_t *priv, uint8_t game_checksum)
 	}
 }
 
-/**
- * Assigns a palette. This is used to allow the user to manually select a
- * different colour palette if one was not found automatically, or if the user
- * prefers a different colour palette.
- * selection is the requestion colour palette. This should be a maximum of
- * NUMBER_OF_PALETTES - 1. The default greyscale palette is selected otherwise.
- */
-void manual_assign_palette(struct priv_t *priv, uint8_t selection)
-{
-#define NUMBER_OF_PALETTES 12
-	size_t palette_bytes = 3 * 4 * sizeof(uint16_t);
-
-	switch(selection)
-	{
-	/* 0x05 (Right) */
-	case 0:
-	{
-		const uint16_t palette[3][4] =
-		{
-			{ 0x7FFF, 0x2BE0, 0x7D00, 0x0000 },
-			{ 0x7FFF, 0x2BE0, 0x7D00, 0x0000 },
-			{ 0x7FFF, 0x2BE0, 0x7D00, 0x0000 }
-		};
-		memcpy(priv->selected_palette, palette, palette_bytes);
-		break;
-	}
-
-	/* 0x07 (A + Down) */
-	case 1:
-	{
-		const uint16_t palette[3][4] =
-		{
-			{ 0x7FFF, 0x7FE0, 0x7C00, 0x0000 },
-			{ 0x7FFF, 0x7FE0, 0x7C00, 0x0000 },
-			{ 0x7FFF, 0x7FE0, 0x7C00, 0x0000 }
-		};
-		memcpy(priv->selected_palette, palette, palette_bytes);
-		break;
-	}
-
-	/* 0x12 (Up) */
-	case 2:
-	{
-		const uint16_t palette[3][4] =
-		{
-			{ 0x7FFF, 0x7EAC, 0x40C0, 0x0000 },
-			{ 0x7FFF, 0x7EAC, 0x40C0, 0x0000 },
-			{ 0x7FFF, 0x7EAC, 0x40C0, 0x0000 }
-		};
-		memcpy(priv->selected_palette, palette, palette_bytes);
-		break;
-	}
-
-	/* 0x13 (B + Right) */
-	case 3:
-	{
-		const uint16_t palette[3][4] =
-		{
-			{ 0x0000, 0x0210, 0x7F60, 0x7FFF },
-			{ 0x0000, 0x0210, 0x7F60, 0x7FFF },
-			{ 0x0000, 0x0210, 0x7F60, 0x7FFF }
-		};
-		memcpy(priv->selected_palette, palette, palette_bytes);
-		break;
-	}
-
-	/* 0x16 (B + Left, DMG Palette) */
-	default:
-	case 4:
-	{
-		const uint16_t palette[3][4] =
-		{
-			{ 0x7FFF, 0x5294, 0x294A, 0x0000 },
-			{ 0x7FFF, 0x5294, 0x294A, 0x0000 },
-			{ 0x7FFF, 0x5294, 0x294A, 0x0000 }
-		};
-		memcpy(priv->selected_palette, palette, palette_bytes);
-		break;
-	}
-
-	/* 0x17 (Down) */
-	case 5:
-	{
-		const uint16_t palette[3][4] =
-		{
-			{ 0x7FF4, 0x7E52, 0x4A5F, 0x0000 },
-			{ 0x7FF4, 0x7E52, 0x4A5F, 0x0000 },
-			{ 0x7FF4, 0x7E52, 0x4A5F, 0x0000 }
-		};
-		memcpy(priv->selected_palette, palette, palette_bytes);
-		break;
-	}
-
-	/* 0x19 (B + Up) */
-	case 6:
-	{
-		const uint16_t palette[3][4] =
-		{
-			{ 0x7FFF, 0x7EAC, 0x40C0, 0x0000 },
-			{ 0x7FFF, 0x7EAC, 0x40C0, 0x0000 },
-			{ 0x7F98, 0x6670, 0x41A5, 0x2CC1 }
-		};
-		memcpy(priv->selected_palette, palette, palette_bytes);
-		break;
-	}
-
-	/* 0x1C (A + Right) */
-	case 7:
-	{
-		const uint16_t palette[3][4] =
-		{
-			{ 0x7FFF, 0x7E10, 0x48E7, 0x0000 },
-			{ 0x7FFF, 0x7E10, 0x48E7, 0x0000 },
-			{ 0x7FFF, 0x3FE6, 0x0198, 0x0000 }
-		};
-		memcpy(priv->selected_palette, palette, palette_bytes);
-		break;
-	}
-
-	/* 0x0D (A + Left) */
-	case 8:
-	{
-		const uint16_t palette[3][4] =
-		{
-			{ 0x7FFF, 0x7E10, 0x48E7, 0x0000 },
-			{ 0x7FFF, 0x7EAC, 0x40C0, 0x0000 },
-			{ 0x7FFF, 0x463B, 0x2951, 0x0000 }
-		};
-		memcpy(priv->selected_palette, palette, palette_bytes);
-		break;
-	}
-
-	/* 0x10 (A + Up) */
-	case 9:
-	{
-		const uint16_t palette[3][4] =
-		{
-			{ 0x7FFF, 0x3FE6, 0x0200, 0x0000 },
-			{ 0x7FFF, 0x329F, 0x001F, 0x0000 },
-			{ 0x7FFF, 0x7E10, 0x48E7, 0x0000 }
-		};
-		memcpy(priv->selected_palette, palette, palette_bytes);
-		break;
-	}
-
-	/* 0x18 (Left) */
-	case 10:
-	{
-		const uint16_t palette[3][4] =
-		{
-			{ 0x7FFF, 0x7E10, 0x48E7, 0x0000 },
-			{ 0x7FFF, 0x3FE6, 0x0200, 0x0000 },
-			{ 0x7FFF, 0x329F, 0x001F, 0x0000 }
-		};
-		memcpy(priv->selected_palette, palette, palette_bytes);
-		break;
-	}
-
-	/* 0x1A (B + Down) */
-	case 11:
-	{
-		const uint16_t palette[3][4] =
-		{
-			{ 0x7FFF, 0x329F, 0x001F, 0x0000 },
-			{ 0x7FFF, 0x3FE6, 0x0200, 0x0000 },
-			{ 0x7FFF, 0x7FE0, 0x3D20, 0x0000 }
-		};
-		memcpy(priv->selected_palette, palette, palette_bytes);
-		break;
-	}
-	}
-
-	return;
-}
 
 #if ENABLE_LCD
 /**
@@ -575,52 +379,26 @@ void lcd_draw_line(struct gb_s *gb, const uint8_t pixels[160],
 }
 #endif
 
-/**
- * Saves the LCD screen as a 15-bit BMP file.
- */
-int save_lcd_bmp(struct gb_s* gb, uint16_t fb[LCD_HEIGHT][LCD_WIDTH])
-{
-	/* Should be enough to record up to 828 days worth of frames. */
-	static uint_fast32_t file_num = 0;
-	char file_name[32];
-	char title_str[16];
-	SDL_RWops *f;
-	int ret = -1;
 
-	SDL_snprintf(file_name, 32, "%.16s_%010ld.bmp",
-		 gb_get_rom_name(gb, title_str), file_num);
 
-	f = SDL_RWFromFile(file_name, "wb");
-	if(f == NULL)
-		goto ret;
 
-	const uint8_t bmp_hdr_rgb555[] = {
-		0x42, 0x4d, 0x36, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x36, 0x00, 0x00, 0x00, 0x28, 0x00, 0x00, 0x00, 0xa0, 0x00,
-		0x00, 0x00, 0x70, 0xff, 0xff, 0xff, 0x01, 0x00, 0x10, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0xb4, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00
-	};
 
-	SDL_RWwrite(f, bmp_hdr_rgb555, sizeof(uint8_t), sizeof(bmp_hdr_rgb555));
-	SDL_RWwrite(f, fb, sizeof(uint16_t), LCD_HEIGHT * LCD_WIDTH);
-	ret = SDL_RWclose(f);
 
-	file_num++;
-
-ret:
-	return ret;
-}
+#define main main  // Undo SDL main entry rename
 
 int main(int argc, char **argv)
 {
-	struct gb_s gb;
-	struct priv_t priv =
+
+	static struct gb_s gb;
+	static struct priv_t priv =
 	{
 		.rom = NULL,
 		.cart_ram = NULL
 	};
+	enum gb_init_error_e gb_ret;
+
+
+
 	const double target_speed_ms = 1000.0 / VERTICAL_SYNC;
 	double speed_compensation = 0.0;
 	SDL_Window *window;
@@ -629,7 +407,6 @@ int main(int argc, char **argv)
 	SDL_Event event;
 	SDL_GameController *controller = NULL;
 	uint_fast32_t new_ticks, old_ticks;
-	enum gb_init_error_e gb_ret;
 	unsigned int fast_mode = 1;
 	unsigned int fast_mode_timer = 1;
 	/* Record save file every 60 seconds. */
@@ -752,8 +529,8 @@ int main(int argc, char **argv)
 
 		/* Allocate enough space for the ROM file name, for the "sav"
 		 * extension and for the null terminator. */
-		save_file_name = SDL_malloc(
-				SDL_strlen(rom_file_name) + SDL_strlen(extension) + 1);
+		const int nameSize = SDL_strlen(rom_file_name) + SDL_strlen(extension) + 1;
+		save_file_name = SDL_malloc(nameSize);
 
 		if(save_file_name == NULL)
 		{
@@ -765,7 +542,7 @@ int main(int argc, char **argv)
 		}
 
 		/* Copy the ROM file name to allocated space. */
-		strcpy(save_file_name, rom_file_name);
+		strcpy_s(save_file_name, nameSize, rom_file_name);
 
 		/* If the file name does not have a dot, or the only dot is at
 		 * the start of the file name, set the pointer to begin
@@ -852,8 +629,8 @@ int main(int argc, char **argv)
 		struct tm timeinfo;
 		localtime_r(&rawtime, &timeinfo);
 #else
-		struct tm *timeinfo;
-		timeinfo = localtime(&rawtime);
+		struct tm timeinfo;
+		localtime_s(&timeinfo, &rawtime);
 #endif
 
 		/* You could potentially force the game to allow the player to
@@ -874,47 +651,10 @@ int main(int argc, char **argv)
 #ifdef _POSIX_C_SOURCE
 		gb_set_rtc(&gb, &timeinfo);
 #else
-		gb_set_rtc(&gb, timeinfo);
+		gb_set_rtc(&gb, &timeinfo);
 #endif
 	}
 
-#if ENABLE_SOUND
-	SDL_AudioDeviceID dev;
-#endif
-
-#if ENABLE_SOUND == 0
-	// Sound is disabled, so do nothing.
-#elif defined(ENABLE_SOUND_BLARGG)
-	audio_init(&dev);
-#elif defined(ENABLE_SOUND_MINIGB)
-	{
-		SDL_AudioSpec want, have;
-
-		want.freq = AUDIO_SAMPLE_RATE;
-		want.format   = AUDIO_S16,
-		want.channels = 2;
-		want.samples = AUDIO_SAMPLES;
-		want.callback = audio_callback;
-		want.userdata = NULL;
-
-		SDL_LogMessage(LOG_CATERGORY_PEANUTSDL,
-				SDL_LOG_PRIORITY_INFO,
-				"Audio driver: %s",
-				SDL_GetAudioDeviceName(0, 0));
-
-		if((dev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0)) == 0)
-		{
-			SDL_LogMessage(LOG_CATERGORY_PEANUTSDL,
-					SDL_LOG_PRIORITY_CRITICAL,
-					"SDL could not open audio device: %s",
-					SDL_GetError());
-			exit(EXIT_FAILURE);
-		}
-
-		minigb_apu_audio_init(&apu);
-		SDL_PauseAudioDevice(dev, 0);
-	}
-#endif
 
 #if ENABLE_LCD
 	gb_init_lcd(&gb, &lcd_draw_line);
@@ -1212,16 +952,7 @@ int main(int argc, char **argv)
 #endif
 
 				case SDLK_p:
-					if(event.key.keysym.mod == KMOD_LSHIFT)
-					{
-						auto_assign_palette(&priv, gb_colour_hash(&gb));
-						break;
-					}
-
-					if(++selected_palette == NUMBER_OF_PALETTES)
-						selected_palette = 0;
-
-					manual_assign_palette(&priv, selected_palette);
+					
 					break;
 				}
 
@@ -1320,7 +1051,7 @@ int main(int argc, char **argv)
 		if(rtc_timer >= 1000.0)
 		{
 			rtc_timer -= 1000.0;
-			gb_tick_rtc(&gb);
+			//gb_tick_rtc(&gb);
 		}
 
 		/* Skip frames during fast mode. */
@@ -1346,20 +1077,7 @@ int main(int argc, char **argv)
 		SDL_RenderCopy(renderer, texture, NULL, NULL);
 		SDL_RenderPresent(renderer);
 
-		if(dump_bmp)
-		{
-			if(save_lcd_bmp(&gb, priv.fb) != 0)
-			{
-				SDL_LogMessage(LOG_CATERGORY_PEANUTSDL,
-					       SDL_LOG_PRIORITY_ERROR,
-					       "Failure dumping frame: %s",
-					       SDL_GetError());
-				dump_bmp = 0;
-				SDL_LogMessage(LOG_CATERGORY_PEANUTSDL,
-					       SDL_LOG_PRIORITY_INFO,
-					       "Stopped dumping frames");
-			}
-		}
+
 
 #endif
 
@@ -1392,7 +1110,7 @@ int main(int argc, char **argv)
 			if(rtc_timer >= 1000)
 			{
 				rtc_timer -= 1000;
-				gb_tick_rtc(&gb);
+				//gb_tick_rtc(&gb);
 
 				/* If 60 seconds has passed, record save file.
 				 * We do this because the blarrg audio library
@@ -1422,7 +1140,7 @@ int main(int argc, char **argv)
 			/* This will delay for at least the number of
 			 * milliseconds requested, so we have to compensate for
 			 * error here too. */
-			SDL_Delay(delay);
+			//SDL_Delay(delay);
 
 			after_delay_ticks = SDL_GetTicks();
 			speed_compensation += (double)delay -
@@ -1457,3 +1175,698 @@ out:
 
 	return ret;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#else
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#define SCREEN_SCALE 1
+#define EMU_WIDTH 160
+#define EMU_HEIGHT 144
+#define DEVICE_WIDTH 128 * SCREEN_SCALE
+#define DEVICE_HEIGHT 128 * SCREEN_SCALE
+#define LOG_BUFFER_SIZE 256
+
+#if defined(MICROPY_ENABLE_DYNRUNTIME)
+#define RP2 1
+#else
+#define RP2 0
+#endif
+
+#if RP2
+#include "py/dynruntime.h"
+#else
+#include <math.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <assert.h>
+#include "SDL.h"
+SDL_Window* window = NULL;
+SDL_Renderer* renderer = NULL;
+void InitRenderer() {
+	// Initialize SDL
+	if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+	}
+	// Create a window
+	window = SDL_CreateWindow("SDL Draw Line", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, DEVICE_WIDTH, DEVICE_HEIGHT, SDL_WINDOW_SHOWN);
+	if (window == NULL) {
+	}
+	// Create a renderer
+	renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+	if (renderer == NULL) {
+	}
+}
+void ClearScreen(int value) {
+	SDL_PumpEvents();
+	// clear rt
+	SDL_SetRenderDrawColor(renderer, value, value, value, 255);
+	// Clear the screen
+	SDL_RenderClear(renderer);
+}
+void UpdateFrame() {
+	SDL_RenderPresent(renderer);
+}
+#endif
+
+#if RP2
+static mp_obj_t InitPeanut(
+	mp_obj_fun_bc_t* self,
+	size_t n_args,
+	size_t n_kw,
+	mp_obj_t* args) {
+
+	int argindex = 0;
+
+	mp_buffer_info_t errorNumBuffer;
+	mp_get_buffer_raise(args[argindex++], &errorNumBuffer, MP_BUFFER_RW);
+	int* errorNum = (int*)errorNumBuffer.buf;
+
+	mp_buffer_info_t logBuffer;
+	mp_get_buffer_raise(args[argindex++], &logBuffer, MP_BUFFER_RW);
+	char* log = (char*)logBuffer.buf;
+
+	mp_buffer_info_t cartRomDataBuffer;
+	mp_get_buffer_raise(args[argindex++], &cartRomDataBuffer, MP_BUFFER_RW);
+	unsigned char* cartRomData = (unsigned char*)cartRomDataBuffer.buf;
+
+	mp_buffer_info_t saveFileSizeBuffer;
+	mp_get_buffer_raise(args[argindex++], &saveFileSizeBuffer, MP_BUFFER_RW);
+	unsigned int* saveFileSize = (unsigned int*)saveFileSizeBuffer.buf;
+
+	PeanutInit(
+		errorNum,
+		log,
+		LOG_BUFFER_SIZE,
+		cartRomData,
+		saveFileSize);
+
+	return mp_const_none;
+}
+
+static mp_obj_t PeanutRun(
+	mp_obj_fun_bc_t* self,
+	size_t n_args,
+	size_t n_kw,
+	mp_obj_t* args)
+{
+	int argindex = 0;
+
+	mp_buffer_info_t logBuffer;
+	mp_get_buffer_raise(args[argindex++], &logBuffer, MP_BUFFER_RW);
+	char* log = (char*)logBuffer.buf;
+
+	mp_buffer_info_t cartRomDataBuffer;
+	mp_get_buffer_raise(args[argindex++], &cartRomDataBuffer, MP_BUFFER_RW);
+	unsigned char* cartRomData = (unsigned char*)cartRomDataBuffer.buf;
+
+	mp_buffer_info_t cartRamDataBuffer;
+	mp_get_buffer_raise(args[argindex++], &cartRamDataBuffer, MP_BUFFER_RW);
+	unsigned char* cartRamData = (unsigned char*)cartRamDataBuffer.buf;
+
+	PeanutRun(
+		log,
+		LOG_BUFFER_SIZE,
+		cartRomData,
+		cartRamData,
+		0xff);
+	return mp_const_none;
+}
+
+static mp_obj_t ResampleBuffer(
+	mp_obj_fun_bc_t* self,
+	size_t n_args,
+	size_t n_kw,
+	mp_obj_t* args)
+{
+	int argindex = 0;
+
+	mp_buffer_info_t colorBuffer;
+	mp_get_buffer_raise(args[argindex++], &colorBuffer, MP_BUFFER_RW);
+	unsigned short* color = (unsigned short*)colorBuffer.buf;
+
+	ResampleBuffer(color);
+	return mp_const_none;
+}
+
+mp_obj_t mpy_init(mp_obj_fun_bc_t* self, size_t n_args, size_t n_kw, mp_obj_t* args) {
+	MP_DYNRUNTIME_INIT_ENTRY
+	mp_store_global(
+		MP_QSTR_InitPeanut,
+		MP_DYNRUNTIME_MAKE_FUNCTION(InitPeanut));
+	mp_store_global(
+		MP_QSTR_PeanutRun,
+		MP_DYNRUNTIME_MAKE_FUNCTION(PeanutRun));
+	mp_store_global(
+		MP_QSTR_ResampleBuffer,
+		MP_DYNRUNTIME_MAKE_FUNCTION(ResampleBuffer));
+	MP_DYNRUNTIME_INIT_EXIT
+}
+#endif
+
+#include "peanut_gb.h"
+
+
+
+static char* messageLogPtr;
+
+static struct gb_s gb;
+static struct priv_t priv =
+{
+	.rom = NULL,
+	.cart_ram = NULL
+};
+enum gb_init_error_e gb_ret;
+
+
+unsigned char gb_rom_read(
+	struct gb_s* gb,
+	const uint_fast32_t addr)
+{
+	//const struct priv_t* const p = gb->direct.priv;
+	return gb->direct.priv->rom[addr];
+}
+uint8_t gb_cart_ram_read(
+	struct gb_s* gb,
+	const uint_fast32_t addr)
+{
+	//const struct priv_t* const p = gb->direct.priv;
+	return gb->direct.priv->cart_ram[addr];
+}
+void gb_cart_ram_write(
+	struct gb_s* gb,
+	const uint_fast32_t addr,
+	const uint8_t val)
+{
+	//const struct priv_t* const p = gb->direct.priv;
+	gb->direct.priv->cart_ram[addr] = val;
+}
+uint8_t gb_bootrom_read(
+	struct gb_s* gb,
+	const uint_fast16_t addr)
+{
+	//const struct priv_t* const p = gb->direct.priv;
+	return gb->direct.priv->bootrom[addr];
+}
+void LogMessage(char* message)
+{
+	return;
+	if (strlen(message) + 1 > LOG_BUFFER_SIZE)
+	{
+		strcpy_s(messageLogPtr, LOG_BUFFER_SIZE, message);
+		messageLogPtr[LOG_BUFFER_SIZE-1] = '\0';
+	}
+	else
+	{
+		strcpy_s(messageLogPtr, strlen(message) + 1, message);
+	}
+}
+void gb_error(
+	struct gb_s* gb,
+	const enum gb_error_e gb_err,
+	const uint16_t addr)
+{
+	// TODO move error messages here
+}
+void lcd_draw_line(
+	struct gb_s* gb,
+	const uint8_t pixels[160],
+	const uint_fast8_t line)
+{
+	//struct priv_t* priv = gb->direct.priv;
+
+	for (unsigned int x = 0; x < LCD_WIDTH; x++)
+	{
+		gb->direct.priv->fb[line][x] = gb->direct.priv->selected_palette
+			[(pixels[x] & LCD_PALETTE_ALL) >> 4]
+			[pixels[x] & 3];
+	}
+}
+
+void auto_assign_palette(struct priv_t* priv, uint8_t game_checksum)
+{
+	size_t palette_bytes = 3 * 4 * sizeof(uint16_t);
+	switch (game_checksum)
+	{
+		/* Balloon Kid and Tetris Blast */
+		case 0x71:
+		case 0xFF:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7FFF, 0x7E60, 0x7C00, 0x0000 }, /* OBJ0 */
+				{ 0x7FFF, 0x7E60, 0x7C00, 0x0000 }, /* OBJ1 */
+				{ 0x7FFF, 0x7E60, 0x7C00, 0x0000 }  /* BG */
+			};
+			memcpy(priv->selected_palette, palette, palette_bytes);
+			break;
+		}
+
+		/* Pokemon Yellow and Tetris */
+		case 0x15:
+		case 0xDB:
+		case 0x95: /* Not officially */
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7FFF, 0x7FE0, 0x7C00, 0x0000 }, /* OBJ0 */
+				{ 0x7FFF, 0x7FE0, 0x7C00, 0x0000 }, /* OBJ1 */
+				{ 0x7FFF, 0x7FE0, 0x7C00, 0x0000 }  /* BG */
+			};
+			memcpy(priv->selected_palette, palette, palette_bytes);
+			break;
+		}
+
+		/* Donkey Kong */
+		case 0x19:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7FFF, 0x7E10, 0x48E7, 0x0000 }, /* OBJ0 */
+				{ 0x7FFF, 0x7E10, 0x48E7, 0x0000 }, /* OBJ1 */
+				{ 0x7FFF, 0x7E60, 0x7C00, 0x0000 }  /* BG */
+			};
+			memcpy(priv->selected_palette, palette, palette_bytes);
+			break;
+		}
+
+		/* Pokemon Blue */
+		case 0x61:
+		case 0x45:
+
+			/* Pokemon Blue Star */
+		case 0xD8:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7FFF, 0x7E10, 0x48E7, 0x0000 }, /* OBJ0 */
+				{ 0x7FFF, 0x329F, 0x001F, 0x0000 }, /* OBJ1 */
+				{ 0x7FFF, 0x329F, 0x001F, 0x0000 }  /* BG */
+			};
+			memcpy(priv->selected_palette, palette, palette_bytes);
+			break;
+		}
+
+		/* Pokemon Red */
+		case 0x14:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7FFF, 0x3FE6, 0x0200, 0x0000 }, /* OBJ0 */
+				{ 0x7FFF, 0x7E10, 0x48E7, 0x0000 }, /* OBJ1 */
+				{ 0x7FFF, 0x7E10, 0x48E7, 0x0000 }  /* BG */
+			};
+			memcpy(priv->selected_palette, palette, palette_bytes);
+			break;
+		}
+
+		/* Pokemon Red Star */
+		case 0x8B:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7FFF, 0x7E10, 0x48E7, 0x0000 }, /* OBJ0 */
+				{ 0x7FFF, 0x329F, 0x001F, 0x0000 }, /* OBJ1 */
+				{ 0x7FFF, 0x3FE6, 0x0200, 0x0000 }  /* BG */
+			};
+			memcpy(priv->selected_palette, palette, palette_bytes);
+			break;
+		}
+
+		/* Kirby */
+		case 0x27:
+		case 0x49:
+		case 0x5C:
+		case 0xB3:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7D8A, 0x6800, 0x3000, 0x0000 }, /* OBJ0 */
+				{ 0x001F, 0x7FFF, 0x7FEF, 0x021F }, /* OBJ1 */
+				{ 0x527F, 0x7FE0, 0x0180, 0x0000 }  /* BG */
+			};
+			memcpy(priv->selected_palette, palette, palette_bytes);
+			break;
+		}
+
+		/* Donkey Kong Land [1/2/III] */
+		case 0x18:
+		case 0x6A:
+		case 0x4B:
+		case 0x6B:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7F08, 0x7F40, 0x48E0, 0x2400 }, /* OBJ0 */
+				{ 0x7FFF, 0x2EFF, 0x7C00, 0x001F }, /* OBJ1 */
+				{ 0x7FFF, 0x463B, 0x2951, 0x0000 }  /* BG */
+			};
+			memcpy(priv->selected_palette, palette, palette_bytes);
+			break;
+		}
+
+		/* Link's Awakening */
+		case 0x70:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7FFF, 0x03E0, 0x1A00, 0x0120 }, /* OBJ0 */
+				{ 0x7FFF, 0x329F, 0x001F, 0x001F }, /* OBJ1 */
+				{ 0x7FFF, 0x7E10, 0x48E7, 0x0000 }  /* BG */
+			};
+			memcpy(priv->selected_palette, palette, palette_bytes);
+			break;
+		}
+
+		/* Mega Man [1/2/3] & others I don't care about. */
+		case 0x01:
+		case 0x10:
+		case 0x29:
+		case 0x52:
+		case 0x5D:
+		case 0x68:
+		case 0x6D:
+		case 0xF6:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7FFF, 0x329F, 0x001F, 0x0000 }, /* OBJ0 */
+				{ 0x7FFF, 0x3FE6, 0x0200, 0x0000 }, /* OBJ1 */
+				{ 0x7FFF, 0x7EAC, 0x40C0, 0x0000 }  /* BG */
+			};
+			memcpy(priv->selected_palette, palette, palette_bytes);
+			break;
+		}
+
+		default:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7FFF, 0x5294, 0x294A, 0x0000 },
+				{ 0x7FFF, 0x5294, 0x294A, 0x0000 },
+				{ 0x7FFF, 0x5294, 0x294A, 0x0000 }
+			};
+			LogMessage("No palette found.");
+			memcpy(priv->selected_palette, palette, palette_bytes);
+		}
+	}
+}
+
+void PeanutInit(
+	int* errorNum,
+	char* logBuffer,
+	int logBufferSize,
+	unsigned char* cartRomData,
+	unsigned int* saveFileSize)
+{
+	messageLogPtr = logBuffer;
+
+	priv.rom = cartRomData;
+	priv.cart_ram = NULL;
+
+	gb_ret = gb_init(
+		&gb,
+		&gb_rom_read,
+		&gb_cart_ram_read,
+		&gb_cart_ram_write,
+		&gb_error,
+		&priv);
+
+	gb_ret = *errorNum;
+	switch (gb_ret)
+	{
+		case GB_INIT_NO_ERROR:
+			LogMessage("No Error.");
+			break;
+		case GB_INIT_CARTRIDGE_UNSUPPORTED:
+			LogMessage("Unsupported cartridge.");
+			return;
+		case GB_INIT_INVALID_CHECKSUM:
+			LogMessage("Invalid ROM: Checksum failure.");
+			return;
+		default:
+			LogMessage("Unknown error.");
+			return;
+	}
+
+	if (gb_get_save_size_s(&gb, &priv.save_size) < 0)
+	{
+		gb_ret = *errorNum;
+		LogMessage("Unable to get save size.");
+		return;
+	}
+
+	*saveFileSize = priv.save_size;
+
+	gb_init_lcd(&gb, &lcd_draw_line);
+
+	auto_assign_palette(&priv, gb_colour_hash(&gb));
+}
+
+void PeanutRun(
+	char* logBuffer,
+	int logBufferSize,
+	unsigned char* cartRomData,
+	unsigned char* cartRamData,
+	unsigned char controllerInput)
+{
+	priv.rom = cartRomData;
+	priv.cart_ram = cartRamData;
+	gb.direct.joypad = controllerInput;
+	gb_run_frame(&gb);
+}
+
+void ResampleBuffer(unsigned short* colorBuffer)
+{
+	for (int x = 0; x < DEVICE_WIDTH; ++x) {
+		for (int y = 0; y < DEVICE_HEIGHT; ++y) {
+			unsigned short pixelData = priv.fb[y][x];
+			colorBuffer[x * DEVICE_HEIGHT + y] = pixelData;
+		}
+	}
+}
+
+#if !RP2
+void Present(unsigned short* colorBuffer)
+{
+	for (int x = 0; x < DEVICE_WIDTH; ++x) {
+		for (int y = 0; y < DEVICE_HEIGHT; ++y) {
+			unsigned int color565 = colorBuffer[x * DEVICE_HEIGHT + y];
+			float red = (float)((color565 >> 10) & 0x1F) / 31.0f;
+			float green = (float)((color565 >> 5) & 0x1F) / 31.0f;
+			float blue = (float)((color565) & 0x1F) / 31.0f;
+			SDL_SetRenderDrawColor(renderer, 255.0f * red, 255.0f * green, 255.0f * blue, 255);
+			SDL_RenderDrawPoint(renderer, x, y);
+		}
+	}
+}
+
+void LoadRom(unsigned char** data, char* fileName)
+{
+	FILE* dataFile;
+	errno_t err = fopen_s(&dataFile, fileName, "rb");
+	assert(err == 0);
+	if (dataFile)
+	{
+		// Allocate size of file
+		fseek(dataFile, 0L, SEEK_END);
+		int fileSize = ftell(dataFile);
+		*data = malloc(fileSize);
+		fseek(dataFile, 0, SEEK_SET);
+		fread_s(*data, fileSize, sizeof(unsigned char), fileSize, dataFile);
+		fclose(dataFile);
+	}
+}
+
+void LoadSave(unsigned char** data, char* fileName, int fileSize)
+{
+	FILE* dataFile;
+	if (fileSize <= 0)
+	{
+		return;
+	}
+	*data = malloc(fileSize);
+	errno_t err = fopen_s(&dataFile, fileName, "rb");
+	if (err != 0)
+	{
+		err = fopen_s(&dataFile, fileName, "wb");
+		assert(err == 0);
+		if (dataFile)
+		{
+			memset(*data, 0, fileSize);
+			fwrite(*data, sizeof(unsigned char), fileSize, dataFile);
+			fclose(dataFile);
+		}
+	}
+	else
+	{
+		fread_s(*data, fileSize, sizeof(unsigned char), fileSize, dataFile);
+	}
+	fclose(dataFile);
+}
+
+
+static unsigned char* cartRomData = NULL;
+static unsigned char* cartRamData = NULL;
+unsigned short colorBuffer[DEVICE_WIDTH * DEVICE_HEIGHT * sizeof(unsigned short)];
+
+#define main main  // Undo SDL main entry rename
+int main()
+{
+	InitRenderer();
+	char* logBuffer = malloc(LOG_BUFFER_SIZE);
+	// Read cart rom and ram, ram size encoded in rom
+	int errorNumber = 0;
+	int saveFileSize = 0;
+
+	LoadRom(&cartRomData, "Tetris.gb");
+
+	PeanutInit(
+		&errorNumber,
+		logBuffer,
+		LOG_BUFFER_SIZE,
+		cartRomData,
+		&saveFileSize);
+
+	if (saveFileSize > 0)
+	{
+		LoadSave(&cartRamData, "Tetris.sav", saveFileSize);
+	}
+
+	bool bRunning = true;
+	unsigned char controllerInput = 0xff;
+	while (bRunning)
+	{
+		SDL_PumpEvents();
+		SDL_Event event;
+		while (SDL_PollEvent(&event))
+		{
+			static int fullscreen = 0;
+			switch (event.type)
+			{
+			case SDL_KEYDOWN:
+				switch (event.key.keysym.sym)
+				{
+					case SDLK_RETURN:
+						controllerInput &= ~JOYPAD_START;
+						break;
+
+					case SDLK_BACKSPACE:
+						controllerInput &= ~JOYPAD_SELECT;
+						break;
+
+					case SDLK_z:
+						controllerInput &= ~JOYPAD_A;
+						break;
+
+					case SDLK_x:
+						controllerInput &= ~JOYPAD_B;
+						break;
+
+					case SDLK_UP:
+						controllerInput &= ~JOYPAD_UP;
+						break;
+
+					case SDLK_RIGHT:
+						controllerInput &= ~JOYPAD_RIGHT;
+						break;
+
+					case SDLK_DOWN:
+						controllerInput &= ~JOYPAD_DOWN;
+						break;
+
+					case SDLK_LEFT:
+						controllerInput &= ~JOYPAD_LEFT;
+						break;
+				}
+				break;
+			case SDL_KEYUP:
+				switch (event.key.keysym.sym)
+				{
+					case SDLK_RETURN:
+						controllerInput |= JOYPAD_START;
+						break;
+
+					case SDLK_BACKSPACE:
+						controllerInput |= JOYPAD_SELECT;
+						break;
+
+					case SDLK_z:
+						controllerInput |= JOYPAD_A;
+						break;
+
+					case SDLK_x:
+						controllerInput |= JOYPAD_B;
+						break;
+
+					case SDLK_UP:
+						controllerInput |= JOYPAD_UP;
+						break;
+
+					case SDLK_RIGHT:
+						controllerInput |= JOYPAD_RIGHT;
+						break;
+
+					case SDLK_DOWN:
+						controllerInput |= JOYPAD_DOWN;
+						break;
+
+					case SDLK_LEFT:
+						controllerInput |= JOYPAD_LEFT;
+						break;
+				}
+			}
+			break;
+		}
+
+		PeanutRun(
+			logBuffer,
+			LOG_BUFFER_SIZE,
+			cartRomData,
+			cartRamData,
+			controllerInput);
+
+		ResampleBuffer(colorBuffer);
+		Present(colorBuffer);
+		UpdateFrame();
+	}
+	SDL_Quit();
+	exit(0);
+	return 0;
+}
+#endif
+
+#endif

@@ -1,0 +1,9 @@
+﻿  peanut_sdl.c
+C:\Peanut-GB\peanut_gb.h(2120,19): warning C4244: '=': conversion from 'int16_t' to 'uint8_t', possible loss of data
+C:\Peanut-GB\examples\sdl2\peanut_sdl.c(1652,22): warning C4267: '=': conversion from 'size_t' to 'unsigned int', possible loss of data
+C:\Peanut-GB\examples\sdl2\peanut_sdl.c(1691,44): warning C4244: 'function': conversion from 'float' to 'Uint8', possible loss of data
+C:\Peanut-GB\examples\sdl2\peanut_sdl.c(1691,58): warning C4244: 'function': conversion from 'float' to 'Uint8', possible loss of data
+C:\Peanut-GB\examples\sdl2\peanut_sdl.c(1691,74): warning C4244: 'function': conversion from 'float' to 'Uint8', possible loss of data
+C:\Peanut-GB\examples\sdl2\peanut_sdl.c(1746,1): warning C4005: 'main': macro redefinition
+C:\Peanut-GB\SDL2-2.32.8\include\SDL_main.h(143,1): message : see previous definition of 'main'
+  PeanutColor.vcxproj -> C:\Peanut-GB\PeanutColor\x64\Debug\PeanutColor.exe

@@ -107,7 +107,8 @@ void PeanutRunImpl(
 	unsigned char* cartRomData,
 	unsigned char* cartRamData,
 	unsigned char controllerInput);
-void ResampleBufferImpl(unsigned short* colorBuffer);
+void ResampleBufferImpl(
+	unsigned short* colorBuffer);
 
 #if RP2
 static mp_obj_t InitPeanut(
@@ -120,12 +121,6 @@ static mp_obj_t InitPeanut(
 	
 	int romAddress = mp_obj_get_int(args[argindex++]);
 	unsigned char* cartRomData = (unsigned char*)(void*)romAddress;
-
-#if 0
-	mp_buffer_info_t cartRomDataBuffer;
-	mp_get_buffer_raise(args[argindex++], &cartRomDataBuffer, MP_BUFFER_RW);
-	unsigned char* cartRomData = (unsigned char*)cartRomDataBuffer.buf;
-#endif
 
 	mp_buffer_info_t saveFileSizeBuffer;
 	mp_get_buffer_raise(args[argindex++], &saveFileSizeBuffer, MP_BUFFER_RW);
@@ -153,12 +148,6 @@ static mp_obj_t PeanutRun(
 
 	int romAddress = mp_obj_get_int(args[argindex++]);
 	unsigned char* cartRomData = (unsigned char*)(void*)romAddress;
-	
-#if 0
-	mp_buffer_info_t cartRomDataBuffer;
-	mp_get_buffer_raise(args[argindex++], &cartRomDataBuffer, MP_BUFFER_RW);
-	unsigned char* cartRomData = (unsigned char*)cartRomDataBuffer.buf;
-#endif
 	
 	mp_buffer_info_t controllerBuffer;
 	mp_get_buffer_raise(args[argindex++], &controllerBuffer, MP_BUFFER_RW);
@@ -191,7 +180,8 @@ static mp_obj_t ResampleBuffer(
 	mp_get_buffer_raise(args[argindex++], &colorBuffer, MP_BUFFER_RW);
 	unsigned short* color = (unsigned short*)colorBuffer.buf;
 
-	ResampleBufferImpl(color);
+	ResampleBufferImpl(
+		color);
 	return mp_const_none;
 }
 
@@ -566,12 +556,146 @@ void PeanutRunImpl(
 	gb_run_frame(&gb);
 }
 
+
+typedef struct 
+{
+	float x;
+	float y;
+	float z;
+} Vec3;
+
+typedef struct 
+{
+	int x;
+	int y;
+	int z;
+} Vec3i;
+
+Vec3 Color555ToVec3(unsigned short color555)
+{
+	float red = (float)((color555 >> 10) & 0x1f) / 31.0f;
+	float green = (float)((color555 >> 5) & 0x1f) / 31.0f;
+	float blue = (float)((color555) & 0x1f) / 31.0f;
+	Vec3 vecRGB = { red, green, blue };
+	return vecRGB;
+}
+
+Vec3 Color565ToVec3(unsigned short color565)
+{
+	float red = (float)((color565 >> 11) & 0x1f) / 31.0f;
+	float green = (float)((color565 >> 5) & 0x2f) / 63.0f;
+	float blue = (float)((color565) & 0x1f) / 31.0f;
+	Vec3 vecRGB = { red, green, blue };
+	return vecRGB;
+}
+
+
+Vec3i Color555ToVec3i(unsigned short color555)
+{
+	int red = ((color555 >> 10) & 0x1f);
+	int green = ((color555 >> 5) & 0x1f);
+	int blue = ((color555) & 0x1f);
+	Vec3i vecRGB = { red, green, blue };
+	return vecRGB;
+}
+
+Vec3i Color565ToVec3i(unsigned short color565)
+{
+	int red = ((color565 >> 11) & 0x1f);
+	int green = ((color565 >> 5) & 0x2f);
+	int blue = ((color565) & 0x1f);
+	Vec3i vecRGB = { red, green, blue };
+	return vecRGB;
+}
+
+unsigned short Vec3ToColor565(Vec3 vecRGB)
+{
+	unsigned short color565 = 0x0;
+	color565 = ((int)(vecRGB.x * 31.f) & 0x1f) << 11;
+	color565 |= ((int)(vecRGB.y * 63.f) & 0x2f) << 5;
+	color565 |= ((int)(vecRGB.z * 31.f) & 0x1f);
+	return color565;
+}
+
+unsigned short Vec3iToColor565(Vec3i vecRGB)
+{
+	unsigned short color565 = 0x0;
+	color565 = (vecRGB.x & 0x1f) << 11;
+	color565 |= (vecRGB.y & 0x2f) << 5;
+	color565 |= (vecRGB.z & 0x1f);
+	return color565;
+}
+
+static inline float fclampf(float x, float min_val, float max_val) {
+    if (x < min_val) return min_val;
+    if (x > max_val) return max_val;
+    return x;
+}
+
+#include <math.h>
 void ResampleBufferImpl(unsigned short* colorBuffer)
 {
-	for (int x = 0; x < DEVICE_WIDTH; ++x) {
-		for (int y = 0; y < DEVICE_HEIGHT; ++y) {
-			unsigned short pixelData = priv.fb[y][x];
-			colorBuffer[y * DEVICE_HEIGHT + x] = pixelData;
+	float src_sizeX = 160.0f;
+	float src_sizeY = 144.0f;
+	float dst_size = 128.0f;
+	float aspect = src_sizeY / src_sizeX;
+	float scaleX = src_sizeX / dst_size;
+	float scaleY = src_sizeY / dst_size / aspect;
+	
+	int trimDeviceHeight = (int)(aspect * dst_size);
+	int marginDeviceY = DEVICE_HEIGHT - trimDeviceHeight;
+
+	// Low pass before resampling for clearer text
+	for (int x = 0; x < DEVICE_WIDTH; ++x) 
+	{
+		for (int y = 0; y < trimDeviceHeight; ++y) 
+		{
+			Vec3 vecRGB = { 0.0f, 0.0f, 0.0f };
+			
+			float src_l = x * scaleX;
+			float src_r = (src_l + 1.0f) * scaleX;
+
+			int i0 = floorf(src_l);
+			int i1 = i0 + 1;
+
+			float w0 = (fminf(src_r, (float)i0 + 1.0f) - src_l) / scaleX;
+			float w1 = 1.0f - w0;
+
+			w0 = fclampf(w0, 0.0f, 1.0f);
+			w1 = fclampf(w1, 0.0f, 1.0f);
+			
+			float src_ly = y * scaleY;
+			float src_ry = (src_ly + 1.0f) * scaleY;
+
+			int i0y = floorf(src_ly);
+			int i1y = i0y + 1;
+
+			float w0y = (fminf(src_ry, (float)i0y + 1.0f) - src_ly) / scaleY;
+			float w1y = 1.0f - w0y;
+
+			w0y = fclampf(w0y, 0.0f, 1.0f);
+			w1y = fclampf(w1y, 0.0f, 1.0f);
+			
+			w0 *= 0.9f;
+			w1 *= 0.9f;
+			w0y *= 0.9f;
+			w1y *= 0.9f;
+
+			Vec3 leftPixel = Color565ToVec3(priv.fb[i0y][i0]);
+			Vec3 rightPixel = Color565ToVec3(priv.fb[i0y][i1]);
+			Vec3 downPixel = Color565ToVec3(priv.fb[i1y][i0]);
+			vecRGB.x = leftPixel.x * w0 + rightPixel.x * w1;
+			vecRGB.y = leftPixel.y * w0 + rightPixel.y * w1;
+			vecRGB.z = leftPixel.z * w0 + rightPixel.z * w1;
+			vecRGB.x += leftPixel.x * w0y + downPixel.x * w1y;
+			vecRGB.y += leftPixel.y * w0y + downPixel.y * w1y;
+			vecRGB.z += leftPixel.z * w0y + downPixel.z * w1y;
+			
+			vecRGB.x /= 2.0f;
+			vecRGB.y /= 2.0f;
+			vecRGB.z /= 2.0f;
+			
+			colorBuffer[(y + marginDeviceY) * DEVICE_HEIGHT + x] = Vec3ToColor565(vecRGB);
 		}
 	}
 }

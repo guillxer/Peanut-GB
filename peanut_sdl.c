@@ -108,7 +108,8 @@ void PeanutRunImpl(
 	unsigned char* cartRamData,
 	unsigned char controllerInput);
 void ResampleBufferImpl(
-	unsigned short* colorBuffer);
+	unsigned short* colorBuffer,
+	int* settingsData);
 
 #if RP2
 static mp_obj_t InitPeanut(
@@ -180,8 +181,13 @@ static mp_obj_t ResampleBuffer(
 	mp_get_buffer_raise(args[argindex++], &colorBuffer, MP_BUFFER_RW);
 	unsigned short* color = (unsigned short*)colorBuffer.buf;
 
+	mp_buffer_info_t settingsBuffer;
+	mp_get_buffer_raise(args[argindex++], &settingsBuffer, MP_BUFFER_RW);
+	int* settingsData = (int *)settingsBuffer.buf;
+
 	ResampleBufferImpl(
-		color);
+		color,
+		settingsData);
 	return mp_const_none;
 }
 
@@ -583,12 +589,11 @@ Vec3 Color555ToVec3(unsigned short color555)
 Vec3 Color565ToVec3(unsigned short color565)
 {
 	float red = (float)((color565 >> 11) & 0x1f) / 31.0f;
-	float green = (float)((color565 >> 5) & 0x2f) / 63.0f;
+	float green = (float)((color565 >> 5) & 0x3f) / 63.0f;
 	float blue = (float)((color565) & 0x1f) / 31.0f;
 	Vec3 vecRGB = { red, green, blue };
 	return vecRGB;
 }
-
 
 Vec3i Color555ToVec3i(unsigned short color555)
 {
@@ -602,7 +607,7 @@ Vec3i Color555ToVec3i(unsigned short color555)
 Vec3i Color565ToVec3i(unsigned short color565)
 {
 	int red = ((color565 >> 11) & 0x1f);
-	int green = ((color565 >> 5) & 0x2f);
+	int green = ((color565 >> 5) & 0x3f);
 	int blue = ((color565) & 0x1f);
 	Vec3i vecRGB = { red, green, blue };
 	return vecRGB;
@@ -612,17 +617,38 @@ unsigned short Vec3ToColor565(Vec3 vecRGB)
 {
 	unsigned short color565 = 0x0;
 	color565 = ((int)(vecRGB.x * 31.f) & 0x1f) << 11;
-	color565 |= ((int)(vecRGB.y * 63.f) & 0x2f) << 5;
+	color565 |= ((int)(vecRGB.y * 63.f) & 0x3f) << 5;
 	color565 |= ((int)(vecRGB.z * 31.f) & 0x1f);
 	return color565;
+}
+
+unsigned short Vec3iToColor555(Vec3i vecRGB)
+{
+	unsigned short color555 = 0x0;
+	color555 = (vecRGB.x & 0x1f) << 10;
+	color555 |= (vecRGB.y & 0x1f) << 5;
+	color555 |= (vecRGB.z & 0x1f);
+	return color555;
 }
 
 unsigned short Vec3iToColor565(Vec3i vecRGB)
 {
 	unsigned short color565 = 0x0;
 	color565 = (vecRGB.x & 0x1f) << 11;
-	color565 |= (vecRGB.y & 0x2f) << 5;
+	color565 |= (vecRGB.y & 0x3f) << 5;
 	color565 |= (vecRGB.z & 0x1f);
+	return color565;
+}
+
+unsigned short Color555ToColor565(unsigned short color555)
+{
+	int red = ((color555 >> 10) & 0x1f);
+	int green = ((color555 >> 5) & 0x1f);
+	int blue = ((color555) & 0x1f);
+	unsigned short color565 = 0x0;
+	color565 = red << 11;
+	color565 |= (green << 1) << 5;
+	color565 |= blue;
 	return color565;
 }
 
@@ -633,69 +659,152 @@ static inline float fclampf(float x, float min_val, float max_val) {
 }
 
 #include <math.h>
-void ResampleBufferImpl(unsigned short* colorBuffer)
+#define maxi(a, b) (((a) > (b)) ? (a) : (b))
+#define mini(a, b) (((a) < (b)) ? (a) : (b))
+void ResampleBufferImpl(
+	unsigned short* colorBuffer,
+	int* settingsData)
 {
-	float src_sizeX = 160.0f;
-	float src_sizeY = 144.0f;
-	float dst_size = 128.0f;
-	float aspect = src_sizeY / src_sizeX;
-	float scaleX = src_sizeX / dst_size;
-	float scaleY = src_sizeY / dst_size / aspect;
+	int scalingType = settingsData[0];
+	int offsetX = settingsData[1];
+	int offsetY = settingsData[2];
 	
-	int trimDeviceHeight = (int)(aspect * dst_size);
-	int marginDeviceY = DEVICE_HEIGHT - trimDeviceHeight;
-
-	// Low pass before resampling for clearer text
-	for (int x = 0; x < DEVICE_WIDTH; ++x) 
+	if (scalingType == 0)
 	{
-		for (int y = 0; y < trimDeviceHeight; ++y) 
+		#define GAUSS_BLUR 0
+		#if GAUSS_BLUR
+		unsigned short blurBuffer[EMU_WIDTH * EMU_HEIGHT * sizeof(unsigned short)];
+		int kernel[3] = { 1, 2, 1 };
+		for (int y = 0; y < EMU_HEIGHT; ++y) 
 		{
-			Vec3 vecRGB = { 0.0f, 0.0f, 0.0f };
-			
-			float src_l = x * scaleX;
-			float src_r = (src_l + 1.0f) * scaleX;
+			for (int x = 0; x < EMU_WIDTH; ++x) 
+			{
+				Vec3i blurVec = { 0, 0, 0 };
+				for (int s = 0; s < 3; ++s)
+				{
+					int sampleX = x + s - 1;
+					sampleX = maxi(0, mini(EMU_WIDTH, sampleX));
+					unsigned short sample565 = priv.fb[y][sampleX];
+					Vec3i sampleVec = Color555ToVec3i(sample565);
+					blurVec.x += sampleVec.x * kernel[s];
+					blurVec.y += sampleVec.y * kernel[s];
+					blurVec.z += sampleVec.z * kernel[s];
+				}
+				blurVec.x /= 4;
+				blurVec.y /= 4;
+				blurVec.z /= 4;
+				blurBuffer[y * EMU_WIDTH + x] = Vec3iToColor555(blurVec);
+			}
+		}
+		for (int x = 0; x < EMU_WIDTH; ++x) 
+		{
+			for (int y = 0; y < EMU_HEIGHT; ++y) 
+			{
+				Vec3i blurVec = { 0, 0, 0 };
+				for (int s = 0; s < 3; ++s)
+				{
+					int sampleY = y + s - 1;
+					sampleY = maxi(0, mini(EMU_HEIGHT, sampleY));
+					unsigned short sample565 = blurBuffer[sampleY * EMU_WIDTH + x];
+					Vec3i sampleVec = Color555ToVec3i(sample565);
+					blurVec.x += sampleVec.x * kernel[s];
+					blurVec.y += sampleVec.y * kernel[s];
+					blurVec.z += sampleVec.z * kernel[s];
+				}
+				blurVec.x /= 4;
+				blurVec.y /= 4;
+				blurVec.z /= 4;
+				priv.fb[y][x] = Vec3iToColor555(blurVec);
+			}
+		}
+		#endif
+		
+		float src_sizeX = 160.0f;
+		float src_sizeY = 144.0f;
+		float dst_size = 128.0f;
+		float aspect = src_sizeY / src_sizeX;
+		float scaleX = src_sizeX / dst_size;
+		float scaleY = src_sizeY / dst_size / aspect;
+		
+		int trimDeviceHeight = (int)(aspect * dst_size);
+		int marginDeviceY = DEVICE_HEIGHT - trimDeviceHeight;
 
-			int i0 = floorf(src_l);
-			int i1 = i0 + 1;
+		// Low pass before resampling for clearer text
+		for (int y = 1; y < trimDeviceHeight; ++y) 
+		{
+			for (int x = 1; x < DEVICE_WIDTH; ++x) 
+			{
+				Vec3 vecRGB = { 0.0f, 0.0f, 0.0f };
+				
+				float src_l = x * scaleX;
+				float src_r = (src_l + 1.0f) * scaleX;
 
-			float w0 = (fminf(src_r, (float)i0 + 1.0f) - src_l) / scaleX;
-			float w1 = 1.0f - w0;
+				int i0 = floorf(src_l);
+				int i1 = i0 + 1;
+				int i2 = i0 - 1;
 
-			w0 = fclampf(w0, 0.0f, 1.0f);
-			w1 = fclampf(w1, 0.0f, 1.0f);
-			
-			float src_ly = y * scaleY;
-			float src_ry = (src_ly + 1.0f) * scaleY;
+				float w0 = (fminf(src_r, (float)i0 + 1.0f) - src_l) / scaleX;
+				w0 = fclampf(w0, 0.0f, 1.0f);
+				float w1 = 1.0f - w0;
+				
+				float src_ly = y * scaleY;
+				float src_ry = (src_ly + 1.0f) * scaleY;
 
-			int i0y = floorf(src_ly);
-			int i1y = i0y + 1;
+				int i0y = floorf(src_ly);
+				int i1y = i0y + 1;
+				int i2y = i0y - 1;
 
-			float w0y = (fminf(src_ry, (float)i0y + 1.0f) - src_ly) / scaleY;
-			float w1y = 1.0f - w0y;
+				float w0y = (fminf(src_ry, (float)i0y + 1.0f) - src_ly) / scaleY;
+				w0y = fclampf(w0y, 0.0f, 1.0f);
+				float w1y = 1.0f - w0y;
+				
+				w0 *= 0.98f;
+				w1 *= 0.98f;
+				w0y *= 0.98f;
+				w1y *= 0.98f;
 
-			w0y = fclampf(w0y, 0.0f, 1.0f);
-			w1y = fclampf(w1y, 0.0f, 1.0f);
-			
-			w0 *= 0.9f;
-			w1 *= 0.9f;
-			w0y *= 0.9f;
-			w1y *= 0.9f;
-
-			Vec3 leftPixel = Color565ToVec3(priv.fb[i0y][i0]);
-			Vec3 rightPixel = Color565ToVec3(priv.fb[i0y][i1]);
-			Vec3 downPixel = Color565ToVec3(priv.fb[i1y][i0]);
-			vecRGB.x = leftPixel.x * w0 + rightPixel.x * w1;
-			vecRGB.y = leftPixel.y * w0 + rightPixel.y * w1;
-			vecRGB.z = leftPixel.z * w0 + rightPixel.z * w1;
-			vecRGB.x += leftPixel.x * w0y + downPixel.x * w1y;
-			vecRGB.y += leftPixel.y * w0y + downPixel.y * w1y;
-			vecRGB.z += leftPixel.z * w0y + downPixel.z * w1y;
-			
-			vecRGB.x /= 2.0f;
-			vecRGB.y /= 2.0f;
-			vecRGB.z /= 2.0f;
-			
-			colorBuffer[(y + marginDeviceY) * DEVICE_HEIGHT + x] = Vec3ToColor565(vecRGB);
+				Vec3 centerPixel = Color555ToVec3(priv.fb[i0y][i0]);
+				Vec3 rightPixel = Color555ToVec3(priv.fb[i0y][i1]);
+				Vec3 downPixel = Color555ToVec3(priv.fb[i1y][i0]);
+				Vec3 upPixel = Color555ToVec3(priv.fb[i2y][i0]);
+				Vec3 leftPixel = Color555ToVec3(priv.fb[i0y][i2]);
+				
+				vecRGB.x = centerPixel.x * w0 + rightPixel.x * w1;
+				vecRGB.y = centerPixel.y * w0 + rightPixel.y * w1;
+				vecRGB.z = centerPixel.z * w0 + rightPixel.z * w1;
+				
+				vecRGB.x += centerPixel.x * w0y + downPixel.x * w1y;
+				vecRGB.y += centerPixel.y * w0y + downPixel.y * w1y;
+				vecRGB.z += centerPixel.z * w0y + downPixel.z * w1y;
+				
+				vecRGB.x += leftPixel.x * w0 + centerPixel.x * w1;
+				vecRGB.y += leftPixel.y * w0 + centerPixel.y * w1;
+				vecRGB.z += leftPixel.z * w0 + centerPixel.z * w1;
+				
+				vecRGB.x += upPixel.x * w0y + centerPixel.x * w1y;
+				vecRGB.y += upPixel.y * w0y + centerPixel.y * w1y;
+				vecRGB.z += upPixel.z * w0y + centerPixel.z * w1y;
+				
+				vecRGB.x /= 4.0f;
+				vecRGB.y /= 4.0f;
+				vecRGB.z /= 4.0f;
+				
+				colorBuffer[(y + marginDeviceY) * DEVICE_WIDTH + x] = Vec3ToColor565(vecRGB);
+			}
+		}
+	}
+	else
+	{
+		int maxDiffX = EMU_WIDTH - DEVICE_WIDTH;
+		int maxDiffY = EMU_HEIGHT - DEVICE_HEIGHT;
+		offsetX = maxi(0, mini(offsetX, maxDiffX));
+		offsetY = maxi(0, mini(offsetY, maxDiffY));
+		for (int y = 0; y < DEVICE_HEIGHT; ++y) 
+			{
+			for (int x = 0; x < DEVICE_WIDTH; ++x) 
+			{
+				colorBuffer[y * DEVICE_WIDTH + x] = Color555ToColor565(priv.fb[y + offsetY][x + offsetX]);
+			}
 		}
 	}
 }

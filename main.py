@@ -13,6 +13,7 @@ from engine_draw import Color
 from engine_nodes import Text2DNode, CameraNode
 from engine_math import Vector2, Vector3
 from engine_resources import FontResource
+from machine import PWM, Pin, Timer
 
 sys.path.append("/Games/PeanutGB")
 os.chdir("/Games/PeanutGB")
@@ -49,7 +50,7 @@ loadingText = TextSprite("")
 class BlockAllocator:
     def __init__(self):
         # Leave ScratchPageOffset of pages for engine resources
-        self.ScratchPageOffset = 32
+        self.ScratchPageOffset = 64
         self.ProgramSize = 1024*1024
         self.PageSize = 4096
         self.ScratchSize = 2*1024*1024
@@ -121,7 +122,7 @@ def LoadROMScratch(fileName):
     romFile.close()
     gc.collect()
 
-machine.freq(280 * 1000 * 1000)
+machine.freq(250 * 1000 * 1000)
 
 controllerStateBuffer = array.array('B', [0xff])
 
@@ -143,7 +144,7 @@ def SetControllerState(buttonIndex, bPressed):
     else:
         controllerStateBuffer[0] |= buttonIndex
 
-class Timer():
+class GameTimer():
     def __init__(self):
         self.currentTime = 0.0
     def Tick(self, dt):
@@ -206,7 +207,7 @@ def RomSelectMenu():
         textList.append(textNode)
         positionY += positionSpacing
     
-    timer = Timer()
+    timer = GameTimer()
     inputDelayTime = 0.3
     timer.Reset(inputDelayTime)
     lastTime = time.ticks_ms()
@@ -255,9 +256,9 @@ def RomSelectMenu():
     titleText4.mark_destroy_all()
     headerText.mark_destroy_all()
     
-    waitTimer = Timer()
+    waitGameTimer = GameTimer()
     waitTime = 0.3
-    waitTimer.Reset(waitTime)
+    waitGameTimer.Reset(waitTime)
     lastTime = time.ticks_ms()
     
     selectedRom = 0
@@ -268,9 +269,9 @@ def RomSelectMenu():
         currentTime = time.ticks_ms()
         deltaTimeS = (currentTime - lastTime) / 1000.0
         lastTime = currentTime
-        waitTimer.Tick(deltaTimeS)
+        waitGameTimer.Tick(deltaTimeS)
         
-        if (waitTimer.IsDone()):
+        if (waitGameTimer.IsDone()):
             break;
         
 def PanningMenu():
@@ -279,8 +280,8 @@ def PanningMenu():
     gc.collect()
     # Tool tip for no scaling mode
     toolTipTime = 1.5
-    toolTipTimer = Timer()
-    toolTipTimer.Reset(toolTipTime)
+    toolTipGameTimer = GameTimer()
+    toolTipGameTimer.Reset(toolTipTime)
     lastTime = time.ticks_ms()
     # Tool tip menu to expain features before returning to game
     noScaleText = TextSprite("LB + Direction")
@@ -292,8 +293,8 @@ def PanningMenu():
         currentTime = time.ticks_ms()
         deltaTimeS = (currentTime - lastTime) / 1000.0
         lastTime = currentTime
-        toolTipTimer.Tick(deltaTimeS)
-        if (toolTipTimer.IsDone() and (engine_io.A.is_pressed or engine_io.B.is_pressed or engine_io.MENU.is_pressed or engine_io.RB.is_pressed)):
+        toolTipGameTimer.Tick(deltaTimeS)
+        if (toolTipGameTimer.IsDone() and (engine_io.A.is_pressed or engine_io.B.is_pressed or engine_io.MENU.is_pressed or engine_io.RB.is_pressed)):
             break
         
 def InfoMenu():
@@ -319,8 +320,8 @@ def InfoMenu():
     infoText8.position = Vector3(0, 4 * positionSpacing, 0)
     
     inputTime = 0.5
-    inputTimer = Timer()
-    inputTimer.Reset(inputTime)
+    inputGameTimer = GameTimer()
+    inputGameTimer.Reset(inputTime)
     
     lastTime = time.ticks_ms()
     
@@ -329,9 +330,9 @@ def InfoMenu():
         currentTime = time.ticks_ms()
         deltaTimeS = (currentTime - lastTime) / 1000.0
         lastTime = currentTime
-        inputTimer.Tick(deltaTimeS)
+        inputGameTimer.Tick(deltaTimeS)
     
-        if (inputTimer.IsDone() and
+        if (inputGameTimer.IsDone() and
             (engine_io.A.is_pressed or
              engine_io.B.is_pressed or
              engine_io.MENU.is_pressed)):
@@ -400,12 +401,12 @@ def SettingsMenu():
     
     maxSelections = 7
     
-    inputTimer = Timer()
-    leaveMenuRBTimer = Timer()
+    inputGameTimer = GameTimer()
+    leaveMenuRBGameTimer = GameTimer()
     inputDelayTime = 0.3
     leaveMenuRBTime = 2.0
-    inputTimer.Reset(inputDelayTime)
-    leaveMenuRBTimer.Reset(leaveMenuRBTime)
+    inputGameTimer.Reset(inputDelayTime)
+    leaveMenuRBGameTimer.Reset(leaveMenuRBTime)
     lastTime = time.ticks_ms()
 
     while(True):
@@ -415,8 +416,8 @@ def SettingsMenu():
         deltaTimeS = (currentTime - lastTime) / 1000.0
         lastTime = currentTime
         
-        inputTimer.Tick(deltaTimeS)
-        leaveMenuRBTimer.Tick(deltaTimeS)
+        inputGameTimer.Tick(deltaTimeS)
+        leaveMenuRBGameTimer.Tick(deltaTimeS)
         
         menuText.color = unselectedColor
         menuText2.color = unselectedColor
@@ -427,8 +428,8 @@ def SettingsMenu():
         menuText7.color = unselectedColor
         menuText8.color = unselectedColor
 
-        if (inputTimer.IsDone() and (engine_io.UP.is_pressed or engine_io.DOWN.is_pressed)):
-            inputTimer.Reset(inputDelayTime)
+        if (inputGameTimer.IsDone() and (engine_io.UP.is_pressed or engine_io.DOWN.is_pressed)):
+            inputGameTimer.Reset(inputDelayTime)
             if (engine_io.UP.is_pressed):
                 menuSelection -= 1
             if (engine_io.DOWN.is_pressed):
@@ -441,19 +442,19 @@ def SettingsMenu():
         if (engine_io.B.is_pressed or engine_io.MENU.is_pressed):
             break
         
-        if (leaveMenuRBTimer.IsDone() and engine_io.RB.is_pressed):
+        if (leaveMenuRBGameTimer.IsDone() and engine_io.RB.is_pressed):
             break
         
         if (menuSelection == 0): # Save
             menuText6.color = selectedColor
-            if (inputTimer.IsDone() and engine_io.A.is_pressed):
-                inputTimer.Reset(inputDelayTime)
+            if (inputGameTimer.IsDone() and engine_io.A.is_pressed):
+                inputGameTimer.Reset(inputDelayTime)
                 menuSave = True
                 break
         elif (menuSelection == 1): # brightness
             menuText7.color = selectedColor
-            if (inputTimer.IsDone() and (engine_io.LEFT.is_pressed or engine_io.RIGHT.is_pressed or engine_io.A.is_pressed)):
-                inputTimer.Reset(inputDelayTime)
+            if (inputGameTimer.IsDone() and (engine_io.LEFT.is_pressed or engine_io.RIGHT.is_pressed or engine_io.A.is_pressed)):
+                inputGameTimer.Reset(inputDelayTime)
                 brightnessChange = 0.0
                 if (engine_io.LEFT.is_pressed):
                     brightnessChange = -0.05
@@ -469,8 +470,8 @@ def SettingsMenu():
         elif (menuSelection == 3): # display type 
             menuText.color = selectedColor
             menuText2.color = secondSelectedColor
-            if (inputTimer.IsDone() and (engine_io.LEFT.is_pressed or engine_io.RIGHT.is_pressed or engine_io.A.is_pressed)):
-                inputTimer.Reset(inputDelayTime)
+            if (inputGameTimer.IsDone() and (engine_io.LEFT.is_pressed or engine_io.RIGHT.is_pressed or engine_io.A.is_pressed)):
+                inputGameTimer.Reset(inputDelayTime)
                 scalingType += 1
                 if (scalingType > 1):
                     scalingType = 0
@@ -480,8 +481,8 @@ def SettingsMenu():
                 menuText2.text = noScalingText
         elif (menuSelection == 4): # game speed
             menuText3.color = selectedColor
-            if (inputTimer.IsDone() and (engine_io.LEFT.is_pressed or engine_io.RIGHT.is_pressed or engine_io.A.is_pressed)):
-                inputTimer.Reset(inputDelayTime)
+            if (inputGameTimer.IsDone() and (engine_io.LEFT.is_pressed or engine_io.RIGHT.is_pressed or engine_io.A.is_pressed)):
+                inputGameTimer.Reset(inputDelayTime)
                 if (engine_io.LEFT.is_pressed):
                     emuSpeed -= 1
                 if (engine_io.RIGHT.is_pressed or engine_io.A.is_pressed):
@@ -494,7 +495,7 @@ def SettingsMenu():
                 menuText3.text = "Game Speed: " + GetFormatedEmuStr(emuSpeed)
         elif (menuSelection == 5):
             menuText5.color = selectedColor
-            if (inputTimer.IsDone() and engine_io.A.is_pressed):
+            if (inputGameTimer.IsDone() and engine_io.A.is_pressed):
                 menuShowControls = True
                 break
         else: # quit emu, reboot kit
@@ -527,6 +528,55 @@ def UpdateSettingsBuffer():
     displaySettingsBuffer [1] = noScaleOffsetX
     displaySettingsBuffer [2] = noScaleOffsetY
 
+
+audioEnablePin = None
+pwmPin = None
+audioSamples = None
+maxSamples = 0
+audioSampleIndex = 0
+def InitAudio():
+    global audioEnablePin
+    global pwmPin
+    global audioSamples
+    global maxSamples
+    
+    numSamplesBuffer = array.array('i', [0])
+    # Audio Init
+    PeanutGB.InitAPU(numSamplesBuffer)
+    maxSamples = numSamplesBuffer[0]
+    
+    print (maxSamples)
+    pmwFQ = 62500
+    
+    audioEnablePin = Pin(20, Pin.OUT)
+    audioEnablePin.value(0)
+    pwmPin = PWM(Pin(23))
+    pwmPin.freq(pmwFQ)
+    pwmPin.duty_u16(0)
+    
+    audioSamples = array.array('h', [0] * maxSamples)
+    
+    audioEnablePin.value(1)
+    
+    sampleRate = 22050
+    audioSystemTimer = Timer()
+    audioSystemTimer.init(freq=sampleRate, mode=Timer.PERIODIC, callback=audioISR)
+    
+
+def audioISR(timer):
+    global pwmPin
+    global audioSamples
+    global maxSamples
+    global audioSampleIndex
+    
+    volume = 64
+    if (audioSampleIndex < maxSamples):
+        sample = int(audioSamples[audioSampleIndex])
+        sample += 32768
+        sample //= volume
+        pwmPin.duty_u16(sample)
+        audioSampleIndex += 2 
+
 def Main():
     global romScratchAddress
     global gameName
@@ -541,8 +591,9 @@ def Main():
     global menuShowControls
     global menuSave
     global menuPanning
+    global audioSampleIndex
     engine.tick()
-    engine.fps_limit(30)
+    engine.fps_limit(60)
     
     RomSelectMenu()
     engine.tick()
@@ -589,8 +640,14 @@ def Main():
                 gc.collect()
         else:
             print("No save found, " + saveFileName + " created.")
+            totalRamWrite = 0
+            writeSize = 256
             saveFile = open(saveFileName, 'wb')
-            saveFile.write(ramData)
+            tempWriteArray = array.array('B', [0] * writeSize)
+            while totalRamWrite < saveFileSize:
+                ramData.extend(tempWriteArray)
+                saveFile.write(tempWriteArray)
+                totalRamWrite += writeSize
         saveFile.close()
                 
     JOYPAD_A            = 0x01
@@ -607,19 +664,27 @@ def Main():
     saveMsgTime = 3.0
     displayPanTime = 0.05
     menuTime = 1.5
-    saveMsgTimer = Timer()
-    saveWaitTimer = Timer()
-    displayPanTimer = Timer()
-    menuTimer = Timer()
+    saveMsgGameTimer = GameTimer()
+    saveWaitGameTimer = GameTimer()
+    displayPanGameTimer = GameTimer()
+    menuGameTimer = GameTimer()
     savingText = None
     savingText2 = None
     savingText3 = None
     savingText4 = None
     
+    bAPUEnabled = False
+    bPPUEnabled = True
+    bEnableFrameSkip = True
+    
+    if (bAPUEnabled):
+        InitAudio()
+    gc.collect()
+    
     while(True):
         if engine.tick():
-            if (menuTimer.IsDone() and saveMsgTimer.IsDone() and engine_io.RB.is_pressed):
-                menuTimer.Reset(menuTime)
+            if (menuGameTimer.IsDone() and saveMsgGameTimer.IsDone() and engine_io.RB.is_pressed):
+                menuGameTimer.Reset(menuTime)
                 SettingsMenu()
                 # Move time ticks up to current time
                 lastTime = time.ticks_ms()
@@ -630,6 +695,7 @@ def Main():
                 if (menuPanning):
                     menuPanning = False
                     PanningMenu()
+                gc.collect()
                 continue
             else:
                 SetControllerState(JOYPAD_LEFT, engine_io.LEFT.is_pressed)
@@ -645,17 +711,16 @@ def Main():
             deltaTimeS = (currentTime - lastTime) / 1000.0
             lastTime = currentTime
             
-            saveMsgTimer.Tick(deltaTimeS)
-            saveWaitTimer.Tick(deltaTimeS)
-            displayPanTimer.Tick(deltaTimeS)
-            menuTimer.Tick(deltaTimeS)
-            
+            saveMsgGameTimer.Tick(deltaTimeS)
+            saveWaitGameTimer.Tick(deltaTimeS)
+            displayPanGameTimer.Tick(deltaTimeS)
+            menuGameTimer.Tick(deltaTimeS)
 
-            if (menuSave or (not(bSaving) and saveWaitTimer.IsDone() and engine_io.LB.is_pressed and engine_io.MENU.is_pressed)):
+            if (menuSave or (not(bSaving) and saveWaitGameTimer.IsDone() and engine_io.LB.is_pressed and engine_io.MENU.is_pressed)):
                 menuSave = False
                 bSaving = True
-                saveMsgTimer.Reset(saveMsgTime)
-                saveWaitTimer.Reset(saveWaitTime)
+                saveMsgGameTimer.Reset(saveMsgTime)
+                saveWaitGameTimer.Reset(saveWaitTime)
                 if (saveFileSize > 0):
                     print("Saving to " + saveFileName)
                     saveFile = open(saveFileName, 'wb')
@@ -674,27 +739,27 @@ def Main():
                     savingText.position = Vector3(0, -1 * positionSpacing, 0)
                     savingText2 = TextSprite("save function.")
                     savingText2.position = Vector3(0, 0 * positionSpacing, 0)
-                
+                gc.collect()
             else:
                 bSaving = False
                     
-            if (displayPanTimer.IsDone() and engine_io.LB.is_pressed and not engine_io.MENU.is_pressed):
+            if (displayPanGameTimer.IsDone() and engine_io.LB.is_pressed and not engine_io.MENU.is_pressed):
                 if (engine_io.LEFT.is_pressed):
                     noScaleOffsetX -= 1
-                    displayPanTimer.Reset(displayPanTime)
+                    displayPanGameTimer.Reset(displayPanTime)
                 if (engine_io.RIGHT.is_pressed):
                     noScaleOffsetX += 1
-                    displayPanTimer.Reset(displayPanTime)
+                    displayPanGameTimer.Reset(displayPanTime)
                 if (engine_io.UP.is_pressed):
                     noScaleOffsetY -= 1
-                    displayPanTimer.Reset(displayPanTime)
+                    displayPanGameTimer.Reset(displayPanTime)
                 if (engine_io.DOWN.is_pressed):
                     noScaleOffsetY += 1
-                    displayPanTimer.Reset(displayPanTime)
+                    displayPanGameTimer.Reset(displayPanTime)
                 noScaleOffsetX = max(0, min(noScaleOffsetX, maxPanX))
                 noScaleOffsetY = max(0, min(noScaleOffsetY, maxPanY))
                 
-            if (saveMsgTimer.IsDone()):
+            if (saveMsgGameTimer.IsDone()):
                 savingText = None
                 savingText2 = None
                 savingText3 = None
@@ -707,6 +772,8 @@ def Main():
             if (scalingType == 0):
                 framesPerEmuSpeed = 2
             emulationFramesPerDeviceFrame = emuSpeed * framesPerEmuSpeed
+            if not(bEnableFrameSkip):
+                emulationFramesPerDeviceFrame = 1
             for emuFrame in range(emulationFramesPerDeviceFrame):
                 PeanutGB.PeanutRun(
                     romArray,
@@ -714,15 +781,22 @@ def Main():
                     ramData
                     )
 
-            UpdateSettingsBuffer()
+            if(bPPUEnabled):
+                UpdateSettingsBuffer()
 
-            displayBuffer = engine_draw.back_fb_data()
-            PeanutGB.ResampleBuffer(
-                displayBuffer,
-                displaySettingsBuffer
-                )
+                displayBuffer = engine_draw.back_fb_data()
+                PeanutGB.ResampleBuffer(
+                    displayBuffer,
+                    displaySettingsBuffer
+                    )
+            
+            if (bAPUEnabled):
+                PeanutGB.SampleAPU(audioSamples)
+                audioSampleIndex = 0
+            
     
 Main()
+
 
 
 

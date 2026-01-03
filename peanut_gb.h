@@ -41,11 +41,13 @@
 # define __has_include(x) 0
 #endif
 
+#if defined(_WIN32)
 //#include <stdlib.h>	/* Required for abort */
-//#include <stdbool.h>	/* Required for bool types */
+#include <stdbool.h>	/* Required for bool types */
 //#include <stdint.h>	/* Required for int types */
 //#include <string.h>	/* Required for memset */
 //#include <time.h>	/* Required for tm struct */
+#endif
 
 /**
 * If PEANUT_GB_IS_LITTLE_ENDIAN is positive, then Peanut-GB will be configured
@@ -81,7 +83,7 @@
  * before including peanut_gb.h in order for these functions to be used.
  */
 #ifndef ENABLE_SOUND
-# define ENABLE_SOUND 0
+# define ENABLE_SOUND 1
 #endif
 
 /* Enable LCD drawing. On by default. May be turned off for testing purposes. */

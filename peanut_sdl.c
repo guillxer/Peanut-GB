@@ -1,6 +1,7 @@
 
 
 #define SCREEN_SCALE 1
+#define UPSCALE 1
 #define EMU_WIDTH 160
 #define EMU_HEIGHT 144
 #define DEVICE_WIDTH 128 * SCREEN_SCALE
@@ -29,7 +30,7 @@ void InitRenderer() {
 	if (SDL_Init(SDL_INIT_VIDEO) < 0) {
 	}
 	// Create a window
-	window = SDL_CreateWindow("SDL Draw Line", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, DEVICE_WIDTH, DEVICE_HEIGHT, SDL_WINDOW_SHOWN);
+	window = SDL_CreateWindow("SDL Draw Line", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, DEVICE_WIDTH * UPSCALE, DEVICE_HEIGHT * UPSCALE, SDL_WINDOW_SHOWN);
 	if (window == NULL) {
 	}
 	// Create a renderer
@@ -110,6 +111,11 @@ void PeanutRunImpl(
 void ResampleBufferImpl(
 	unsigned short* colorBuffer,
 	int* settingsData);
+void InitAudioImpl(
+	int* numSamples);
+void AudioCallbackImpl(
+	short* audioBuffer);
+
 
 #if RP2
 static mp_obj_t InitPeanut(
@@ -191,6 +197,38 @@ static mp_obj_t ResampleBuffer(
 	return mp_const_none;
 }
 
+static mp_obj_t InitAPU(
+	mp_obj_fun_bc_t* self,
+	size_t n_args,
+	size_t n_kw,
+	mp_obj_t* args)
+{
+	int argindex = 0;
+
+	mp_buffer_info_t numSamplesBuffer;
+	mp_get_buffer_raise(args[argindex++], &numSamplesBuffer, MP_BUFFER_RW);
+	int* numSamples = (int*)numSamplesBuffer.buf;
+	
+	InitAudioImpl(numSamples);
+	return mp_const_none;
+}
+static mp_obj_t SampleAPU(
+	mp_obj_fun_bc_t* self,
+	size_t n_args,
+	size_t n_kw,
+	mp_obj_t* args)
+{
+	int argindex = 0;
+
+	mp_buffer_info_t audioBuffer;
+	mp_get_buffer_raise(args[argindex++], &audioBuffer, MP_BUFFER_RW);
+	short* audioData = (short*)audioBuffer.buf;
+	
+	AudioCallbackImpl(
+		audioData);
+	return mp_const_none;
+}
+
 mp_obj_t mpy_init(mp_obj_fun_bc_t* self, size_t n_args, size_t n_kw, mp_obj_t* args) {
 	MP_DYNRUNTIME_INIT_ENTRY
 	mp_store_global(
@@ -202,11 +240,21 @@ mp_obj_t mpy_init(mp_obj_fun_bc_t* self, size_t n_args, size_t n_kw, mp_obj_t* a
 	mp_store_global(
 		MP_QSTR_ResampleBuffer,
 		MP_DYNRUNTIME_MAKE_FUNCTION(ResampleBuffer));
+	mp_store_global(
+		MP_QSTR_InitAPU,
+		MP_DYNRUNTIME_MAKE_FUNCTION(InitAPU));
+	mp_store_global(
+		MP_QSTR_SampleAPU,
+		MP_DYNRUNTIME_MAKE_FUNCTION(SampleAPU));
 	MP_DYNRUNTIME_INIT_EXIT
 }
 #endif
 
+uint8_t audio_read(uint16_t addr);
+void audio_write(uint16_t addr, uint8_t val);
+
 #include "peanut_gb.h"
+#include "minigb_apu.h"
 
 char* messageLogPtr;
 
@@ -218,7 +266,29 @@ struct priv_t priv =
 };
 enum gb_init_error_e gb_ret;
 
+struct minigb_apu_ctx apu;
 
+#if !RP2
+// ~ 550 * sizeof(unsigned int) bytes
+audio_sample_t audioSamples[AUDIO_SAMPLES_TOTAL * sizeof(audio_sample_t)];
+#endif
+
+uint8_t audio_read(uint16_t addr);
+void audio_write(uint16_t addr, uint8_t val);
+void audio_callback(void* ptr, audio_sample_t* data, int len);
+
+uint8_t audio_read(uint16_t addr)
+{
+	return minigb_apu_audio_read(&apu, addr);
+}
+void audio_write(uint16_t addr, uint8_t val)
+{
+	minigb_apu_audio_write(&apu, addr, val);
+}
+void audio_callback(void* ptr, audio_sample_t* data, int len)
+{
+	minigb_apu_audio_callback(&apu, data);
+}
 unsigned char gb_rom_read(
 	struct gb_s* gb,
 	const uint_fast32_t addr)
@@ -516,30 +586,10 @@ void PeanutInitImpl(
 		&priv);
 
 	gb_ret = *errorNum;
-	
-	#if 0
-	switch (gb_ret)
-	{
-		case GB_INIT_NO_ERROR:
-			LogMessage("No Error.");
-			break;
-		case GB_INIT_CARTRIDGE_UNSUPPORTED:
-			LogMessage("Unsupported cartridge.");
-			return;
-		case GB_INIT_INVALID_CHECKSUM:
-			LogMessage("Invalid ROM: Checksum failure.");
-			return;
-		default:
-			LogMessage("Unknown error.");
-			return;
-	}
-	#endif
 
 	if (gb_get_save_size_s(&gb, &priv.save_size) < 0)
 	{
 		gb_ret = *errorNum;
-		//LogMessage("Unable to get save size.");
-		//return;
 	}
 	
 	saveFileSize[0] = priv.save_size;
@@ -562,6 +612,16 @@ void PeanutRunImpl(
 	gb_run_frame(&gb);
 }
 
+void InitAudioImpl(int* numSamples)
+{
+	minigb_apu_audio_init(&apu, numSamples);
+}
+
+void AudioCallbackImpl(
+	short* audioBuffer)
+{
+	minigb_apu_audio_callback(&apu, audioBuffer);
+}
 
 typedef struct 
 {
@@ -622,6 +682,15 @@ unsigned short Vec3ToColor565(Vec3 vecRGB)
 	return color565;
 }
 
+unsigned short Vec3ToColor555(Vec3 vecRGB)
+{
+	unsigned short color555 = 0x0;
+	color555 = ((int)(vecRGB.x * 31.f) & 0x1f) << 10;
+	color555 |= ((int)(vecRGB.y * 31.f) & 0x1f) << 5;
+	color555 |= ((int)(vecRGB.z * 31.f) & 0x1f);
+	return color555;
+}
+
 unsigned short Vec3iToColor555(Vec3i vecRGB)
 {
 	unsigned short color555 = 0x0;
@@ -668,128 +737,80 @@ void ResampleBufferImpl(
 	int scalingType = settingsData[0];
 	int offsetX = settingsData[1];
 	int offsetY = settingsData[2];
-	
+
+	float aspect = (float)EMU_HEIGHT / (float)EMU_WIDTH;
+	int trimDeviceHeight = (int)(aspect * (float)DEVICE_HEIGHT);
+	int marginDeviceY = DEVICE_HEIGHT - trimDeviceHeight;
+
 	if (scalingType == 0)
 	{
-		#define GAUSS_BLUR 0
-		#if GAUSS_BLUR
-		unsigned short blurBuffer[EMU_WIDTH * EMU_HEIGHT * sizeof(unsigned short)];
-		int kernel[3] = { 1, 2, 1 };
-		for (int y = 0; y < EMU_HEIGHT; ++y) 
+		#if !RP2
+		// Buffer already zerored by RP2
+		// Here loop unrolling will exhaust stack with GCC
+		for (int y = 0; y < marginDeviceY; ++y)
 		{
-			for (int x = 0; x < EMU_WIDTH; ++x) 
+			for (int x = 0; x < DEVICE_WIDTH; ++x)
 			{
-				Vec3i blurVec = { 0, 0, 0 };
-				for (int s = 0; s < 3; ++s)
-				{
-					int sampleX = x + s - 1;
-					sampleX = maxi(0, mini(EMU_WIDTH, sampleX));
-					unsigned short sample565 = priv.fb[y][sampleX];
-					Vec3i sampleVec = Color555ToVec3i(sample565);
-					blurVec.x += sampleVec.x * kernel[s];
-					blurVec.y += sampleVec.y * kernel[s];
-					blurVec.z += sampleVec.z * kernel[s];
-				}
-				blurVec.x /= 4;
-				blurVec.y /= 4;
-				blurVec.z /= 4;
-				blurBuffer[y * EMU_WIDTH + x] = Vec3iToColor555(blurVec);
-			}
-		}
-		for (int x = 0; x < EMU_WIDTH; ++x) 
-		{
-			for (int y = 0; y < EMU_HEIGHT; ++y) 
-			{
-				Vec3i blurVec = { 0, 0, 0 };
-				for (int s = 0; s < 3; ++s)
-				{
-					int sampleY = y + s - 1;
-					sampleY = maxi(0, mini(EMU_HEIGHT, sampleY));
-					unsigned short sample565 = blurBuffer[sampleY * EMU_WIDTH + x];
-					Vec3i sampleVec = Color555ToVec3i(sample565);
-					blurVec.x += sampleVec.x * kernel[s];
-					blurVec.y += sampleVec.y * kernel[s];
-					blurVec.z += sampleVec.z * kernel[s];
-				}
-				blurVec.x /= 4;
-				blurVec.y /= 4;
-				blurVec.z /= 4;
-				priv.fb[y][x] = Vec3iToColor555(blurVec);
+				colorBuffer[y * DEVICE_WIDTH + x] = 0x00;
 			}
 		}
 		#endif
-		
-		float src_sizeX = 160.0f;
-		float src_sizeY = 144.0f;
-		float dst_size = 128.0f;
-		float aspect = src_sizeY / src_sizeX;
-		float scaleX = src_sizeX / dst_size;
-		float scaleY = src_sizeY / dst_size / aspect;
-		
-		int trimDeviceHeight = (int)(aspect * dst_size);
-		int marginDeviceY = DEVICE_HEIGHT - trimDeviceHeight;
-
-		// Low pass before resampling for clearer text
-		for (int y = 1; y < trimDeviceHeight; ++y) 
+		int blendScales[4][2] = {
+			{4, 1}, {3, 2}, {2, 3}, {1, 4}
+		};
+		const float weightAndNormalizeFactor = 1.0f / 5.0f / 31.0f;
+		for (int y = 0; y < EMU_HEIGHT; ++y)
 		{
-			for (int x = 1; x < DEVICE_WIDTH; ++x) 
+			int sourceX = 0;
+			for (int x = 0; x < DEVICE_WIDTH; x += 4)
 			{
-				Vec3 vecRGB = { 0.0f, 0.0f, 0.0f };
-				
-				float src_l = x * scaleX;
-				float src_r = (src_l + 1.0f) * scaleX;
-
-				int i0 = floorf(src_l);
-				int i1 = i0 + 1;
-				int i2 = i0 - 1;
-
-				float w0 = (fminf(src_r, (float)i0 + 1.0f) - src_l) / scaleX;
-				w0 = fclampf(w0, 0.0f, 1.0f);
-				float w1 = 1.0f - w0;
-				
-				float src_ly = y * scaleY;
-				float src_ry = (src_ly + 1.0f) * scaleY;
-
-				int i0y = floorf(src_ly);
-				int i1y = i0y + 1;
-				int i2y = i0y - 1;
-
-				float w0y = (fminf(src_ry, (float)i0y + 1.0f) - src_ly) / scaleY;
-				w0y = fclampf(w0y, 0.0f, 1.0f);
-				float w1y = 1.0f - w0y;
-				
-				w0 *= 0.98f;
-				w1 *= 0.98f;
-				w0y *= 0.98f;
-				w1y *= 0.98f;
-
-				Vec3 centerPixel = Color555ToVec3(priv.fb[i0y][i0]);
-				Vec3 rightPixel = Color555ToVec3(priv.fb[i0y][i1]);
-				Vec3 downPixel = Color555ToVec3(priv.fb[i1y][i0]);
-				Vec3 upPixel = Color555ToVec3(priv.fb[i2y][i0]);
-				Vec3 leftPixel = Color555ToVec3(priv.fb[i0y][i2]);
-				
-				vecRGB.x = centerPixel.x * w0 + rightPixel.x * w1;
-				vecRGB.y = centerPixel.y * w0 + rightPixel.y * w1;
-				vecRGB.z = centerPixel.z * w0 + rightPixel.z * w1;
-				
-				vecRGB.x += centerPixel.x * w0y + downPixel.x * w1y;
-				vecRGB.y += centerPixel.y * w0y + downPixel.y * w1y;
-				vecRGB.z += centerPixel.z * w0y + downPixel.z * w1y;
-				
-				vecRGB.x += leftPixel.x * w0 + centerPixel.x * w1;
-				vecRGB.y += leftPixel.y * w0 + centerPixel.y * w1;
-				vecRGB.z += leftPixel.z * w0 + centerPixel.z * w1;
-				
-				vecRGB.x += upPixel.x * w0y + centerPixel.x * w1y;
-				vecRGB.y += upPixel.y * w0y + centerPixel.y * w1y;
-				vecRGB.z += upPixel.z * w0y + centerPixel.z * w1y;
-				
-				vecRGB.x /= 4.0f;
-				vecRGB.y /= 4.0f;
-				vecRGB.z /= 4.0f;
-				
-				colorBuffer[(y + marginDeviceY) * DEVICE_WIDTH + x] = Vec3ToColor565(vecRGB);
+				Vec3i vecRGB = { 0, 0, 0 };
+				for (int i = 0; i < 4; ++i)
+				{
+					Vec3i leftSample = Color555ToVec3i(priv.fb[y][sourceX + i + 0]);
+					Vec3i rightSample = Color555ToVec3i(priv.fb[y][sourceX + i + 1]);
+					vecRGB.x = leftSample.x * blendScales[i][0];
+					vecRGB.y = leftSample.y * blendScales[i][0];
+					vecRGB.z = leftSample.z * blendScales[i][0];
+					vecRGB.x += rightSample.x * blendScales[i][1];
+					vecRGB.y += rightSample.y * blendScales[i][1];
+					vecRGB.z += rightSample.z * blendScales[i][1];
+					Vec3 vecRGBFloat = { 0, 0, 0 };
+					vecRGBFloat.x = (float)vecRGB.x * weightAndNormalizeFactor;
+					vecRGBFloat.y = (float)vecRGB.y * weightAndNormalizeFactor;
+					vecRGBFloat.z = (float)vecRGB.z * weightAndNormalizeFactor;
+					priv.fb[y][x + i] = Vec3ToColor555(vecRGBFloat);
+				}
+				sourceX += 5;
+			}
+		}
+		for (int x = 0; x < DEVICE_WIDTH; ++x)
+		{
+			int sourceY = 0;
+			for (int y = 0; y < trimDeviceHeight; y += 4)
+			{
+				Vec3i vecRGB = { 0, 0, 0 };
+				for (int i = 0; i < 4; ++i)
+				{
+					if ((y + marginDeviceY + i) >= DEVICE_HEIGHT)
+					{
+						break;
+					}
+					Vec3i leftSample = Color555ToVec3i(priv.fb[sourceY + i + 0][x]);
+					Vec3i rightSample = Color555ToVec3i(priv.fb[sourceY + i + 1][x]);
+					vecRGB.x = leftSample.x * blendScales[i][0];
+					vecRGB.y = leftSample.y * blendScales[i][0];
+					vecRGB.z = leftSample.z * blendScales[i][0];
+					vecRGB.x += rightSample.x * blendScales[i][1];
+					vecRGB.y += rightSample.y * blendScales[i][1];
+					vecRGB.z += rightSample.z * blendScales[i][1];
+					Vec3 vecRGBFloat = { 0, 0, 0 };
+					vecRGBFloat.x = (float)vecRGB.x * weightAndNormalizeFactor;
+					vecRGBFloat.y = (float)vecRGB.y * weightAndNormalizeFactor;
+					vecRGBFloat.z = (float)vecRGB.z * weightAndNormalizeFactor;
+					colorBuffer[(y + marginDeviceY + i) * DEVICE_WIDTH + x] = Vec3ToColor565(vecRGBFloat);
+				}
+				sourceY += 5;
 			}
 		}
 	}
@@ -812,14 +833,16 @@ void ResampleBufferImpl(
 #if !RP2
 void Present(unsigned short* colorBuffer)
 {
-	for (int x = 0; x < DEVICE_WIDTH; ++x) {
-		for (int y = 0; y < DEVICE_HEIGHT; ++y) {
-			unsigned int color565 = colorBuffer[x * DEVICE_HEIGHT + y];
-			float red = (float)((color565 >> 10) & 0x1F) / 31.0f;
-			float green = (float)((color565 >> 5) & 0x1F) / 31.0f;
+	for (int x = 0; x < DEVICE_WIDTH * UPSCALE; ++x)
+	{
+		for (int y = 0; y < DEVICE_HEIGHT * UPSCALE; ++y)
+		{
+			unsigned int color565 = colorBuffer[x/ UPSCALE * DEVICE_HEIGHT + y/ UPSCALE];
+			float red = (float)((color565 >> 11) & 0x1F) / 31.0f;
+			float green = (float)((color565 >> 5) & 0x3F) / 63.0f;
 			float blue = (float)((color565) & 0x1F) / 31.0f;
 			SDL_SetRenderDrawColor(renderer, 255.0f * red, 255.0f * green, 255.0f * blue, 255);
-			SDL_RenderDrawPoint(renderer, x, y);
+			SDL_RenderDrawPoint(renderer, y, x);
 		}
 	}
 }
@@ -871,29 +894,54 @@ void LoadSave(unsigned char** data, char* fileName, int fileSize)
 
 static unsigned char* cartRomData = NULL;
 static unsigned char* cartRamData = NULL;
+#define COLOR_BUFFER_SIZE DEVICE_WIDTH * DEVICE_HEIGHT * sizeof(unsigned short)
+unsigned short deviceColorBuffer[COLOR_BUFFER_SIZE];
+
+void Save(int saveSize)
+{
+	if (cartRamData)
+	{
+		FILE* saveFile = NULL;
+		char* name = "PokemonRed.sav";
+		int err = fopen_s(&saveFile, name, "wb");
+		assert(err == 0);
+		fwrite(cartRamData, sizeof(unsigned char), saveSize, saveFile);
+		fclose(saveFile);
+	}
+}
 
 #define main main  // Undo SDL main entry rename
 int main()
 {
+	memset(deviceColorBuffer, 0, COLOR_BUFFER_SIZE);
+
 	InitRenderer();
-	char* logBuffer = malloc(LOG_BUFFER_SIZE);
 	// Read cart rom and ram, ram size encoded in rom
 	int errorNumber = 0;
-	int saveFileSize = 0;
+	unsigned int saveFileSize = 0;
+	char* msg = NULL;
+	int errorNum = 0;
 
 	LoadRom(&cartRomData, "PokemonRed.gb");
 
-	PeanutInit(
-		&errorNumber,
-		logBuffer,
+	PeanutInitImpl(
+		&errorNum,
+		msg,
 		LOG_BUFFER_SIZE,
 		cartRomData,
 		&saveFileSize);
 
 	if (saveFileSize > 0)
 	{
-		LoadSave(&cartRamData, "PokemonRed.sav", saveFileSize);
+		LoadSave(
+			&cartRamData,
+			"PokemonRed.sav",
+			saveFileSize);
 	}
+
+	minigb_apu_audio_init(&apu);
+
+	int displaySettings[3] = {0, 0, 0};
 
 	bool bRunning = true;
 	unsigned char controllerInput = 0xff;
@@ -976,21 +1024,36 @@ int main()
 					case SDLK_LEFT:
 						controllerInput |= JOYPAD_LEFT;
 						break;
+
+					case SDLK_1:
+						displaySettings[0] = 0;
+						break;
+					case SDLK_2:
+						displaySettings[0] = 1;
+						break;
+					case SDLK_3:
+						displaySettings[0] = 2;
+						break;
 				}
 			}
 			break;
 		}
 
-		PeanutRun(
-			logBuffer,
+		PeanutRunImpl(
+			msg,
 			LOG_BUFFER_SIZE,
 			cartRomData,
 			cartRamData,
 			controllerInput);
 
-		ResampleBuffer(colorBuffer);
-		Present(colorBuffer);
+		ResampleBufferImpl(
+			deviceColorBuffer,
+			displaySettings);
+		Present(deviceColorBuffer);
 		UpdateFrame();
+
+		
+		audio_callback(NULL, audioSamples, 0);
 	}
 	SDL_Quit();
 	exit(0);

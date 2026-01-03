@@ -18,9 +18,15 @@
     <ClInclude Include="..\..\peanut_gb.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\minigb_apu.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\examples\sdl2\peanut_sdl.c">
+    <ClCompile Include="..\..\peanut_sdl.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\minigb_apu.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

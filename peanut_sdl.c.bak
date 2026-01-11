@@ -1,5 +1,4 @@
 
-
 #define SCREEN_SCALE 1
 #define UPSCALE 1
 #define EMU_WIDTH 160
@@ -16,6 +15,10 @@
 
 #if RP2
 #include "py/dynruntime.h"
+#include "py/runtime.h"
+
+mp_obj_t romReadCallback = MP_OBJ_NULL;
+
 #else
 #include <math.h>
 #include <stdint.h>
@@ -101,7 +104,9 @@ void PeanutInitImpl(
 	char* logBuffer,
 	int logBufferSize,
 	unsigned char* cartRomData,
-	unsigned int* saveFileSize);
+	unsigned int* saveFileSize,
+	unsigned int* romFSData,
+	unsigned char* bankTableData);
 void PeanutRunImpl(
 	char* logBuffer,
 	int logBufferSize,
@@ -110,12 +115,20 @@ void PeanutRunImpl(
 	unsigned char controllerInput);
 void ResampleBufferImpl(
 	unsigned short* colorBuffer,
+	unsigned short* scratchBuffer,
 	int* settingsData);
-void InitAudioImpl(
+void InitAPUImpl(
 	int* numSamples);
 void AudioCallbackImpl(
-	short* audioBuffer);
-
+	short* audioBuffer,
+	unsigned short* dmaBuffer,
+	int pwmTOP, 
+	int bufferIndex,
+	int mixMode);
+void FillSaveStateImpl(
+	unsigned char* saveStateData);
+void SetSaveStateImpl(
+	unsigned char* saveStateData);
 
 #if RP2
 static mp_obj_t InitPeanut(
@@ -133,6 +146,14 @@ static mp_obj_t InitPeanut(
 	mp_get_buffer_raise(args[argindex++], &saveFileSizeBuffer, MP_BUFFER_RW);
 	unsigned int* saveFileSize = (unsigned int*)saveFileSizeBuffer.buf;
 
+	mp_buffer_info_t romFSBuffer;
+	mp_get_buffer_raise(args[argindex++], &romFSBuffer, MP_BUFFER_RW);
+	unsigned int* romFSData = (unsigned int*)romFSBuffer.buf;
+
+	mp_buffer_info_t bankTableBuffer;
+	mp_get_buffer_raise(args[argindex++], &bankTableBuffer, MP_BUFFER_RW);
+	unsigned char* bankTableData = (unsigned char*)bankTableBuffer.buf;
+	
 	char* msg = NULL;
 	int errorNum = 0;
 
@@ -141,10 +162,11 @@ static mp_obj_t InitPeanut(
 		msg,
 		LOG_BUFFER_SIZE,
 		cartRomData,
-		saveFileSize);
+		saveFileSize,
+		romFSData,
+		bankTableData);
 	return mp_const_none;
 }
-
 static mp_obj_t PeanutRun(
 	mp_obj_fun_bc_t* self,
 	size_t n_args,
@@ -164,14 +186,16 @@ static mp_obj_t PeanutRun(
 	mp_get_buffer_raise(args[argindex++], &cartRamDataBuffer, MP_BUFFER_RW);
 	unsigned char* cartRamData = (unsigned char*)cartRamDataBuffer.buf;
 
+	romReadCallback = args[argindex++];
 	char* msg = NULL;
-	
+		
 	PeanutRunImpl(
 		msg,
 		LOG_BUFFER_SIZE,
 		cartRomData,
 		cartRamData,
 		controllerData[0]);
+		
 	return mp_const_none;
 }
 
@@ -186,6 +210,10 @@ static mp_obj_t ResampleBuffer(
 	mp_buffer_info_t colorBuffer;
 	mp_get_buffer_raise(args[argindex++], &colorBuffer, MP_BUFFER_RW);
 	unsigned short* color = (unsigned short*)colorBuffer.buf;
+	
+	mp_buffer_info_t scratchBuffer;
+	mp_get_buffer_raise(args[argindex++], &scratchBuffer, MP_BUFFER_RW);
+	unsigned short* scratchData = (unsigned short*)scratchBuffer.buf;
 
 	mp_buffer_info_t settingsBuffer;
 	mp_get_buffer_raise(args[argindex++], &settingsBuffer, MP_BUFFER_RW);
@@ -193,6 +221,7 @@ static mp_obj_t ResampleBuffer(
 
 	ResampleBufferImpl(
 		color,
+		scratchData,
 		settingsData);
 	return mp_const_none;
 }
@@ -209,7 +238,9 @@ static mp_obj_t InitAPU(
 	mp_get_buffer_raise(args[argindex++], &numSamplesBuffer, MP_BUFFER_RW);
 	int* numSamples = (int*)numSamplesBuffer.buf;
 	
-	InitAudioImpl(numSamples);
+	InitAPUImpl(
+		numSamples);
+
 	return mp_const_none;
 }
 static mp_obj_t SampleAPU(
@@ -220,12 +251,61 @@ static mp_obj_t SampleAPU(
 {
 	int argindex = 0;
 
-	mp_buffer_info_t audioBuffer;
-	mp_get_buffer_raise(args[argindex++], &audioBuffer, MP_BUFFER_RW);
-	short* audioData = (short*)audioBuffer.buf;
+	mp_buffer_info_t audioSampleBuffer;
+	mp_get_buffer_raise(args[argindex++], &audioSampleBuffer, MP_BUFFER_RW);
+	short* audioSampleData = audioSampleBuffer.buf;
+	
+	mp_buffer_info_t audioDMABuffer;
+	mp_get_buffer_raise(args[argindex++], &audioDMABuffer, MP_BUFFER_RW);
+	unsigned short* audioDMAData = audioDMABuffer.buf;
+	
+	mp_buffer_info_t samplingSettingsBuffer;
+	mp_get_buffer_raise(args[argindex++], &samplingSettingsBuffer, MP_BUFFER_RW);
+	int* samplingSettings = samplingSettingsBuffer.buf;
+	int pwmTOP = samplingSettings[0];
+	int bufferIndex = samplingSettings[1];
+	
+	int mixMode = 0;
 	
 	AudioCallbackImpl(
-		audioData);
+		audioSampleData,
+		audioDMAData,
+		pwmTOP,
+		bufferIndex,
+		mixMode);
+	
+	return mp_const_none;
+}
+static mp_obj_t FillSaveState(
+	mp_obj_fun_bc_t* self,
+	size_t n_args,
+	size_t n_kw,
+	mp_obj_t* args)
+{
+	int argindex = 0;
+
+	mp_buffer_info_t saveStateBuffer;
+	mp_get_buffer_raise(args[argindex++], &saveStateBuffer, MP_BUFFER_RW);
+	unsigned char* saveStateData = saveStateBuffer.buf;
+	
+	FillSaveStateImpl(saveStateData);
+	
+	return mp_const_none;
+}
+static mp_obj_t SetSaveState(
+	mp_obj_fun_bc_t* self,
+	size_t n_args,
+	size_t n_kw,
+	mp_obj_t* args)
+{
+	int argindex = 0;
+
+	mp_buffer_info_t saveStateBuffer;
+	mp_get_buffer_raise(args[argindex++], &saveStateBuffer, MP_BUFFER_RW);
+	unsigned char* saveStateData = saveStateBuffer.buf;
+	
+	SetSaveStateImpl(saveStateData);
+	
 	return mp_const_none;
 }
 
@@ -246,6 +326,12 @@ mp_obj_t mpy_init(mp_obj_fun_bc_t* self, size_t n_args, size_t n_kw, mp_obj_t* a
 	mp_store_global(
 		MP_QSTR_SampleAPU,
 		MP_DYNRUNTIME_MAKE_FUNCTION(SampleAPU));
+	mp_store_global(
+		MP_QSTR_FillSaveState,
+		MP_DYNRUNTIME_MAKE_FUNCTION(FillSaveState));
+	mp_store_global(
+		MP_QSTR_SetSaveState,
+		MP_DYNRUNTIME_MAKE_FUNCTION(SetSaveState));
 	MP_DYNRUNTIME_INIT_EXIT
 }
 #endif
@@ -273,9 +359,7 @@ struct minigb_apu_ctx apu;
 audio_sample_t audioSamples[AUDIO_SAMPLES_TOTAL * sizeof(audio_sample_t)];
 #endif
 
-uint8_t audio_read(uint16_t addr);
-void audio_write(uint16_t addr, uint8_t val);
-void audio_callback(void* ptr, audio_sample_t* data, int len);
+void audio_callback(void* ptr, audio_sample_t* data, unsigned short* dmaData, int pwmTOP, int bufferIndex, int mixMode);
 
 uint8_t audio_read(uint16_t addr)
 {
@@ -285,16 +369,151 @@ void audio_write(uint16_t addr, uint8_t val)
 {
 	minigb_apu_audio_write(&apu, addr, val);
 }
-void audio_callback(void* ptr, audio_sample_t* data, int len)
+void audio_callback(void* ptr, audio_sample_t* data, unsigned short* dmaData, int pwmTOP, int bufferIndex, int mixMode)
 {
-	minigb_apu_audio_callback(&apu, data);
+	minigb_apu_audio_callback(&apu, data, dmaData, pwmTOP, bufferIndex, mixMode);
+}
+#define numTableEntries 4
+#define bankSize (16 * 1024)
+#define bankShift 14
+#define bankAddressMask 0x3fff
+volatile unsigned int* romFSPipe;
+volatile unsigned char* bankTable;
+int bankIDArray[numTableEntries];
+int bankTableIDArray[numTableEntries];
+char lifoLRU[numTableEntries];
+int lastBankIndex;
+int lastTableIndex;
+
+unsigned int AddressToBankID(unsigned int address)
+{
+	return address >> bankShift;
+}
+unsigned int AddressToBankAddress(unsigned int address)
+{
+	return address & bankAddressMask;
+}
+int GetLRUTableID()
+{
+	return lifoLRU[numTableEntries - 1];
+}
+inline void UpdateLRU(unsigned int tableID)
+{
+	bool bShift = false;
+	for (int i = numTableEntries - 1; i >= 1; --i)
+	{
+		if (lifoLRU[i] == tableID)
+		{
+			bShift = true;
+		}
+		if (bShift)
+		{
+			lifoLRU[i] = lifoLRU[i - 1];
+		}
+	}
+	lifoLRU[0] = tableID;
+}
+int GetTableID(unsigned int bankID)
+{
+    int tableID = -1;
+    for (int i = 0; i < numTableEntries; ++i)
+	{
+		int tableBankID = bankTableIDArray[i];
+        if ((int)bankID == tableBankID)
+		{
+			tableID = i;
+            break;
+		}
+	}
+    return tableID;
+}
+#if 0
+int GetLRUTableID()
+{
+    int ittrIndex = 0;
+    int lruIndex = 0;
+    int maxCounterValue = -1024 * 1024 * 1024;
+    for (int i = 0; i < numTableEntries; ++i)
+	{
+		int countSinceUsed = bankLastUsedCounterArray[i];
+        if (countSinceUsed > maxCounterValue)
+		{
+            lruIndex = ittrIndex;
+            maxCounterValue = countSinceUsed;
+		}
+        ittrIndex += 1;
+	}
+    return lruIndex;
+}
+void UpdateLRUCounters(unsigned int tableID)
+{
+    bankLastUsedCounterArray[tableID] -= 1;
+}
+#endif
+unsigned char GetDataInTable(unsigned int tableID, unsigned int address)
+{
+    int bankAddress = AddressToBankAddress(address);
+    return bankTable[tableID * bankSize + bankAddress];
+}
+void FillTableEntry(int tableID, unsigned int bankID)
+{
+	romFSPipe[1] = bankID;
+	romFSPipe[2] = tableID;
+	romFSPipe[0] = 1;
+	while (romFSPipe[0] != 0){}
+    bankTableIDArray[tableID] = bankID;
+}
+unsigned char GetRomData(unsigned int address)
+{
+    unsigned int bankID = AddressToBankID(address);
+	if (bankID != lastBankIndex)
+	{
+		int tableID = GetTableID(bankID);
+		if (tableID < 0)
+		{
+			tableID = GetLRUTableID();
+			FillTableEntry(tableID, bankID);
+		}
+		UpdateLRU(tableID);
+		lastBankIndex = bankID;
+		lastTableIndex = tableID;
+	}
+    return GetDataInTable(lastTableIndex, address);
+}
+unsigned char RomReadFromFS(const uint_fast32_t addr)
+{
+	// Callbacks are not working with this MP firmware
+	// Instead update missing cached banks in Core1 loop
+	// only when the emulatore is running
+	unsigned char data = GetRomData(addr);
+	return data;
+}
+void InitBankCache()
+{
+	for (int i = 0; i < numTableEntries; ++i)
+	{
+		bankIDArray[i] = -1;
+		bankTableIDArray[i] = -1;
+		lifoLRU[i] = i;
+	}
+	lastBankIndex = -1;
+	lastTableIndex = -1;
 }
 unsigned char gb_rom_read(
 	struct gb_s* gb,
 	const uint_fast32_t addr)
 {
 	const struct priv_t* const p = gb->direct.priv;
-	return p->rom[addr];
+	unsigned char romValue = 0;
+	if (addr < ((1024 + 512) << 10))
+	{
+		romValue = p->rom[addr];
+	}
+	else
+	{
+		romValue = RomReadFromFS(addr);
+	}
+	return romValue;
 }
 uint8_t gb_cart_ram_read(
 	struct gb_s* gb,
@@ -317,6 +536,60 @@ uint8_t gb_bootrom_read(
 {
 	const struct priv_t* const p = gb->direct.priv;
 	return p->bootrom[addr];
+}
+#if RP2
+__attribute__((optimize("O0")))
+#endif
+void SetSaveStateImpl(unsigned char* saveStateData)
+{
+	// Set gb state
+	
+	// Save off function pointers
+	void* gb_rom_read = gb.gb_rom_read;
+	void* gb_cart_ram_read = gb.gb_cart_ram_read;
+	void* gb_cart_ram_write = gb.gb_cart_ram_write;
+	void* gb_error = gb.gb_error;
+	struct priv_t* priv = gb.direct.priv;
+
+	void* gb_serial_tx = gb.gb_serial_tx;
+	void* gb_serial_rx = gb.gb_serial_rx;
+	
+	void* lcd_draw_line = gb.display.lcd_draw_line;
+
+	void* gb_bootrom_read = gb.gb_bootrom_read;
+
+	unsigned char* gbBytes = (unsigned char*)&gb;
+	int gbSize = sizeof(gb);
+	for (int i = 0; i < gbSize; ++i)
+	{
+		gbBytes[i] = saveStateData[i];
+	}
+		
+	gb.gb_rom_read = gb_rom_read;
+	gb.gb_cart_ram_read = gb_cart_ram_read;
+	gb.gb_cart_ram_write = gb_cart_ram_write;
+	gb.gb_error = gb_error;
+	gb.direct.priv = priv;
+
+	gb.gb_serial_tx = gb_serial_tx;
+	gb.gb_serial_rx = gb_serial_rx;
+	
+	gb.display.lcd_draw_line = lcd_draw_line;
+
+	gb.gb_bootrom_read = gb_bootrom_read;
+}
+#if RP2
+__attribute__((optimize("O0")))
+#endif
+void FillSaveStateImpl(unsigned char* saveStateData)
+{
+	// Copy gb state
+	unsigned char* gbBytes = (unsigned char*)(void*)&gb;
+	int gbSize = 10;//sizeof(gb);
+	for (int i = 0; i < gbSize; ++i)
+	{
+		saveStateData[i] = gbBytes[i];
+	}
 }
 void LogMessage(char* message)
 {
@@ -521,7 +794,7 @@ void auto_assign_palette(struct priv_t* priv, uint8_t game_checksum)
 			break;
 		}
 
-		/* Mega Man [1/2/3] & others I don't care about. */
+		/* Mega Man [1/2/3] */
 		case 0x01:
 		case 0x10:
 		case 0x29:
@@ -570,9 +843,17 @@ void PeanutInitImpl(
 	char* logBuffer,
 	int logBufferSize,
 	unsigned char* cartRomData,
-	unsigned int* saveFileSize)
+	unsigned int* saveFileSize,
+	unsigned int* romFSData,
+	unsigned char* bankTableData)
 {
 	messageLogPtr = logBuffer;
+	
+	romFSPipe = romFSData;
+	
+	bankTable = bankTableData;
+	
+	InitBankCache();
 
 	priv.rom = cartRomData;
 	priv.cart_ram = NULL;
@@ -612,15 +893,19 @@ void PeanutRunImpl(
 	gb_run_frame(&gb);
 }
 
-void InitAudioImpl(int* numSamples)
+void InitAPUImpl(int* numSamples)
 {
 	minigb_apu_audio_init(&apu, numSamples);
 }
 
 void AudioCallbackImpl(
-	short* audioBuffer)
+	short* bufferArg, 
+	unsigned short* dmaData, 
+	int pwmTOP, 
+	int bufferIndex, 
+	int mixMode)
 {
-	minigb_apu_audio_callback(&apu, audioBuffer);
+	minigb_apu_audio_callback(&apu, bufferArg, dmaData, pwmTOP, bufferIndex, mixMode);
 }
 
 typedef struct 
@@ -732,6 +1017,7 @@ static inline float fclampf(float x, float min_val, float max_val) {
 #define mini(a, b) (((a) < (b)) ? (a) : (b))
 void ResampleBufferImpl(
 	unsigned short* colorBuffer,
+	unsigned short* scratchBuffer,
 	int* settingsData)
 {
 	int scalingType = settingsData[0];
@@ -759,6 +1045,7 @@ void ResampleBufferImpl(
 			{4, 1}, {3, 2}, {2, 3}, {1, 4}
 		};
 		const float weightAndNormalizeFactor = 1.0f / 5.0f / 31.0f;
+		
 		for (int y = 0; y < EMU_HEIGHT; ++y)
 		{
 			int sourceX = 0;
@@ -779,7 +1066,7 @@ void ResampleBufferImpl(
 					vecRGBFloat.x = (float)vecRGB.x * weightAndNormalizeFactor;
 					vecRGBFloat.y = (float)vecRGB.y * weightAndNormalizeFactor;
 					vecRGBFloat.z = (float)vecRGB.z * weightAndNormalizeFactor;
-					priv.fb[y][x + i] = Vec3ToColor555(vecRGBFloat);
+					scratchBuffer[y * DEVICE_WIDTH + x + i] = Vec3ToColor555(vecRGBFloat);
 				}
 				sourceX += 5;
 			}
@@ -792,12 +1079,12 @@ void ResampleBufferImpl(
 				Vec3i vecRGB = { 0, 0, 0 };
 				for (int i = 0; i < 4; ++i)
 				{
-					if ((y + marginDeviceY + i) < DEVICE_HEIGHT)
+					if ((y + marginDeviceY + i) >= DEVICE_HEIGHT)
 					{
 						break;
 					}
-					Vec3i leftSample = Color555ToVec3i(priv.fb[sourceY + i + 0][x]);
-					Vec3i rightSample = Color555ToVec3i(priv.fb[sourceY + i + 1][x]);
+					Vec3i leftSample = Color555ToVec3i(scratchBuffer[(sourceY + i + 0) * DEVICE_WIDTH + x]);
+					Vec3i rightSample = Color555ToVec3i(scratchBuffer[(sourceY + i + 1) * DEVICE_WIDTH + x]);
 					vecRGB.x = leftSample.x * blendScales[i][0];
 					vecRGB.y = leftSample.y * blendScales[i][0];
 					vecRGB.z = leftSample.z * blendScales[i][0];
@@ -890,7 +1177,6 @@ void LoadSave(unsigned char** data, char* fileName, int fileSize)
 	}
 	fclose(dataFile);
 }
-
 
 static unsigned char* cartRomData = NULL;
 static unsigned char* cartRamData = NULL;

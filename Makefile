@@ -4,6 +4,8 @@ MPY_DIR = ../../..
 # Name of module
 MOD = PeanutGB
 
+#USER_C_MODULES += dma_pwm
+
 # Source files (.c or .py)
 SRC = peanut_sdl.c minigb_apu.c
 

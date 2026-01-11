@@ -82,6 +82,8 @@
  * audio_write() functions are provided, define ENABLE_SOUND to a non-zero value
  * before including peanut_gb.h in order for these functions to be used.
  */
+# define ENABLE_SOUND 1
+
 #ifndef ENABLE_SOUND
 # define ENABLE_SOUND 1
 #endif
@@ -104,7 +106,7 @@
 
 /* Use intrinsic functions. This may produce smaller and faster code. */
 #ifndef PEANUT_GB_USE_INTRINSICS
-# define PEANUT_GB_USE_INTRINSICS 0
+# define PEANUT_GB_USE_INTRINSICS 1
 #endif
 
 /* Only include function prototypes. At least one file must *not* have this

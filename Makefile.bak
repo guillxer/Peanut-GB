@@ -5,7 +5,7 @@ MPY_DIR = ../../..
 MOD = PeanutGB
 
 # Source files (.c or .py)
-SRC = peanut_sdl.c
+SRC = peanut_sdl.c minigb_apu.c
 
 # Architecture to build for (x86, x64, armv7m, xtensa, xtensawin)
 ARCH = armv8m

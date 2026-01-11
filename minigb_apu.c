@@ -287,28 +287,64 @@ static void update_noise(struct minigb_apu_ctx *ctx, audio_sample_t *samples)
 #if RP2
 // Memset loop unrolls turn off optimization for 
 // this function, only called during initialization
-__attribute__((optimize("O0")))
+//__attribute__((optimize("O0")))
 #endif
 void audioClearNoOpt(audio_sample_t *stream)
 {
 	for (int i = 0; i < AUDIO_SAMPLES_TOTAL; ++i)
 	{
-		stream[0] = -32768;
+		stream[0] = 0;
 	}
 }
 
 /**
  * SDL2 style audio callback function.
  */
-void minigb_apu_audio_callback(struct minigb_apu_ctx *ctx,
-		audio_sample_t *stream)
+void minigb_apu_audio_callback(
+		struct minigb_apu_ctx *ctx,
+		audio_sample_t *stream,
+		unsigned short *dmaStream,
+		int pwmTOP,
+		int bufferIndex,
+		int mixMode)
 {
 	//memset(stream, 0, AUDIO_SAMPLES_TOTAL * sizeof(audio_sample_t));
-	audioClearNoOpt(stream);
-	update_square(ctx, stream, 0);
-	update_square(ctx, stream, 1);
-	update_wave(ctx, stream);
-	update_noise(ctx, stream);
+	if (false)
+	{
+		audioClearNoOpt(stream);
+		update_square(ctx, stream, 0);
+		update_square(ctx, stream, 1);
+		update_wave(ctx, stream);
+		update_noise(ctx, stream);
+	}
+	struct chan *c1 = &ctx->chans[0];
+	struct chan *c2 = &ctx->chans[0];
+
+	dmaStream[0] = c1->freq;
+	dmaStream[1] = c1->volume;
+	dmaStream[2] = c2->freq;
+	dmaStream[3] = c2->volume;
+	
+	#if 0
+	// Sample L channel
+	for (int i = 0; i < AUDIO_SAMPLES_TOTAL; i+=2)
+	{
+		int rectifySample = stream[i + 0];
+		
+		if (false)
+		{
+			rectifySample = gb_apu_mix_piezo(rectifySample, 0);
+		}
+
+		rectifySample += 32768;
+		rectifySample = rectifySample * pwmTOP / 65535; 
+		
+		for(int j = 0; j < 2; ++j)
+		{
+			dmaStream[bufferIndex * AUDIO_SAMPLES_TOTAL + i + j] = (unsigned short)rectifySample;
+		}
+	}
+	#endif
 }
 
 static void chan_trigger(struct minigb_apu_ctx *ctx, uint_fast8_t i)
@@ -528,7 +564,7 @@ void minigb_apu_audio_write(struct minigb_apu_ctx *ctx,
 #if RP2
 // Memset loop unrolls turn off optimization for 
 // this function, only called during initialization
-__attribute__((optimize("O0")))
+//__attribute__((optimize("O0")))
 #endif
 void minigb_apu_audio_init(struct minigb_apu_ctx *ctx, int* numSamples)
 {

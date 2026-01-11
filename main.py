@@ -14,14 +14,38 @@ from engine_nodes import Text2DNode, CameraNode
 from engine_math import Vector2, Vector3
 from engine_resources import FontResource
 from machine import PWM, Pin, Timer
+#from rp2 import DMA
+import _thread
 
 sys.path.append("/Games/PeanutGB")
 os.chdir("/Games/PeanutGB")
 
 import PeanutGB
 
+clockRate = 280 * 1000 * 1000
+
+gc.collect()
+# Allocate ram before rom read fragmentation occurs
+romArray = None
+maxCartRAMSize = 32 * 1024
+saveSizeBuffer = array.array('i', [0])
+saveFileSize = 0
+ramData = bytearray(maxCartRAMSize)
+scratchFilterBuffer = bytearray(128 * 144 * 2)
+romFSBuffer = array.array('I', [0] * 3)
+bankSize = 16 * 1024
+numTableEntries = 4
+# Resident banks
+bankTable = bytearray(numTableEntries * bankSize)
+gc.collect()
+
 romScratchAddress = 0
 scratchData = bytearray([])
+romFile = None
+fsCallback = None
+romFileName = None
+gameName = None
+saveStateSelected = False
 
 camera = CameraNode()
 textFont = FontResource("font3x5.bmp")
@@ -43,8 +67,6 @@ class TextSprite(Text2DNode):
         self.color = color
     def SetPosition(self, position):
         self.position = position
-
-loadingText = TextSprite("")
 
 # Linear block allocator
 class BlockAllocator:
@@ -100,16 +122,21 @@ def ForceFlush():
         scratchData = bytearray([])
         gc.collect()
 
-def LoadROMScratch(fileName):
+maxResidentScratchRomSize = (1024 + 512) * 1024
+def LoadROMScratch(fileName, maxRomPages = maxResidentScratchRomSize):
     global romScratchAddress
-    global loadingText
+    global romFile
+    loadingText = TextSprite("")
+    GlobalBlockAllocator.Reset()
     totalDataRead = 0
     statData = os.stat(fileName)
     romSize = statData[6]
+    maxScratchSize = min(maxRomPages, maxResidentScratchRomSize)
+    romSizeScratch = min(romSize, maxScratchSize)
     romFile = open(fileName, "rb")
     romScratchAddress = GlobalBlockAllocator.GetBaseAddress()
-    while totalDataRead < romSize:
-        percentStr = str(int(totalDataRead / romSize * 100.0 + 1.0))
+    while totalDataRead < romSizeScratch:
+        percentStr = str(int(totalDataRead / romSizeScratch * 100.0 + 1.0))
         loadingText.text = "Loading " + percentStr + " %"
         loadingProgress = f"Loading ROM " + percentStr + " percent."
         print(loadingProgress, end='\r')
@@ -122,9 +149,246 @@ def LoadROMScratch(fileName):
     romFile.close()
     gc.collect()
 
-machine.freq(250 * 1000 * 1000)
+machine.freq(clockRate)
 
 controllerStateBuffer = array.array('B', [0xff])
+
+def InitEmulator():
+    global romFileName
+    global romArray
+    global romFSBuffer
+    global bankTable
+    global saveFileSize
+    romFileName = gameName + ".gb"
+    # Load enough pages to initialize memory
+    LoadROMScratch(romFileName, 4096 * 4)
+    romArray = romScratchAddress
+    PeanutGB.InitPeanut(
+        romArray,
+        saveSizeBuffer,
+        romFSBuffer,
+        bankTable
+        )
+    saveFileSize = saveSizeBuffer[0]
+
+CART_SAVE_IDX = 0
+AUTO_CART_SAVE_IDX = 1
+SAVE_STATE_0_IDX = 2
+SAVE_STATE_1_IDX = 3
+SAVE_STATE_2_IDX = 4
+
+CART_SAVE_STR = "Cart Save"
+AUTO_CART_STR = "Cart Save State"
+SAVE_0_STR = "Save State 0"
+SAVE_1_STR = "Save State 1"
+SAVE_2_STR = "Save State 2"
+SAVE_STR_LIST = [CART_SAVE_STR, AUTO_CART_STR, SAVE_0_STR, SAVE_1_STR, SAVE_2_STR]
+
+CART_SUFFIX = ".sav"
+AUTO_CART_SUFFIX = "_auto.sav"
+SAVE_0_SUFFIX = "_0.sav"
+SAVE_1_SUFFIX = "_1.sav"
+SAVE_2_SUFFIX = "_2.sav"
+SAVE_SUFFIX_LIST = [CART_SUFFIX, AUTO_CART_SUFFIX, SAVE_0_SUFFIX, SAVE_1_SUFFIX, SAVE_2_SUFFIX]
+
+def PopulateSaveList(romName):
+    # Cart Save, Auto Cart State, Save State 0, Save State 1, Save State 2
+    saveList = [None, None, None, None, None]
+    saveFiles = []
+    allFiles = os.listdir()
+    for file in allFiles:
+        if file.startswith(romName) and file.endswith(".sav"):
+            saveFiles.append(file)
+    for file in saveFiles:
+        if file == romName + CART_SUFFIX:
+            saveList[CART_SAVE_IDX] = file
+        elif file.endswith(AUTO_CART_SUFFIX):
+            saveList[AUTO_CART_SAVE_IDX] = file
+        elif file.endswith(SAVE_0_SUFFIX):
+            saveList[SAVE_STATE_0_IDX] = file
+        elif file.endswith(SAVE_1_SUFFIX):
+            saveList[SAVE_STATE_1_IDX] = file
+        elif file.endswith(SAVE_2_SUFFIX):
+            saveList[SAVE_STATE_2_IDX] = file
+    return saveList
+
+def SaveLoadMenu(romName, bSaveMode):
+    global camera
+    bFileSelected = False
+    saveList = PopulateSaveList(romName)
+    
+    if (not(bSaveMode) and len(saveList) <= 0):
+        InitEmulator()
+        return True
+    
+    selectedColor = Color(1.0, 1.0, 1.0)
+    unselectedColor = Color(0.5, 0.5, 0.5)
+    
+    cameraPositionY = -1000
+    camera.position = Vector3(8, cameraPositionY, 0)
+    
+    titleText = TextSprite("Select Save")
+    titleText.position = Vector3(0, cameraPositionY + -4 * positionSpacing, 0)
+    saveTextList = []
+    saveTextListInd = []
+    saveFileNameList = []
+    
+    saveIndex = 0
+    if (bSaveMode):
+        for save in saveList:
+            # Skip auto cart save
+            if (saveIndex != AUTO_CART_SAVE_IDX) and not(saveIndex == CART_SAVE_IDX and saveFileSize <= 0):
+                saveTextNode = None
+                if (save == None):
+                    saveTextNode = TextSprite("Empty " + SAVE_STR_LIST[saveIndex])
+                else:
+                    saveTextNode = TextSprite(SAVE_STR_LIST[saveIndex])
+                saveTextNode.position = Vector3(0, cameraPositionY + (saveIndex - 2) * positionSpacing, 0)
+                saveTextList.append(saveTextNode)
+                saveTextListInd.append(saveIndex) 
+            saveIndex += 1
+                
+    else: # Load Mode
+        for save in saveList:
+            saveTextNode = None
+            if saveIndex == CART_SAVE_IDX and saveFileSize <= 0:
+                saveTextNode = TextSprite("Continue")
+                saveTextNode.position = Vector3(0, cameraPositionY + (saveIndex - 2) * positionSpacing, 0)
+                saveTextList.append(saveTextNode)
+                saveTextListInd.append(saveIndex)
+            elif saveIndex == AUTO_CART_SAVE_IDX and saveFileSize <= 0:
+                pass
+            elif (save != None):
+                saveTextNode = TextSprite(SAVE_STR_LIST[saveIndex])
+                saveTextNode.position = Vector3(0, cameraPositionY + (saveIndex - 2) * positionSpacing, 0)
+                saveTextList.append(saveTextNode)
+                saveTextListInd.append(saveIndex)
+            saveIndex += 1
+    
+    for i in range(len(SAVE_SUFFIX_LIST)):
+        saveFileNameList.append(romName + SAVE_SUFFIX_LIST[i])
+    
+    numSaves = len(saveTextListInd)
+    
+    timer = GameTimer()
+    inputDelayTime = 0.3
+    timer.Reset(inputDelayTime)
+    lastTime = time.ticks_ms()
+    
+    selectedSave = 0
+    while (True):
+        engine.tick()
+        
+        currentTime = time.ticks_ms()
+        timer.Tick((currentTime - lastTime) / 1000.0)
+        lastTime = currentTime
+        
+        if (engine_io.UP.is_pressed and timer.IsDone()):
+            timer.Reset(inputDelayTime)
+            selectedSave -= 1
+        if (engine_io.DOWN.is_pressed and timer.IsDone()):
+            timer.Reset(inputDelayTime)
+            selectedSave += 1
+
+        if (selectedSave < 0):
+            selectedSave = numSaves - 1
+        if (selectedSave >= numSaves):
+            selectedSave = 0
+            
+        for i in range(len(saveTextList)):
+            if i == selectedSave:
+                saveTextList[i].SetColor(selectedColor)
+            else:
+                saveTextList[i].SetColor(unselectedColor)
+            
+        if (engine_io.A.is_pressed and timer.IsDone()):
+            saveEnum = saveTextListInd[selectedSave]
+            if (bSaveMode):
+                if (saveEnum == CART_SAVE_IDX): # Cart Save
+                    SaveCart(saveFileNameList[CART_SAVE_IDX], saveFileNameList[AUTO_CART_SAVE_IDX])
+                else: # Save State
+                    SaveState(saveFileNameList[saveEnum])
+            else: # Load Mode
+                if (saveEnum == CART_SAVE_IDX): # Cart Load
+                    if (saveFileSize <= 0): # Continue no cart ram option
+                        return True
+                    LoadCart(saveFileNameList[CART_SAVE_IDX])
+                else: # Load State
+                    LoadState(saveFileNameList[saveEnum])
+            bFileSelected = True
+            break
+        if (engine_io.B.is_pressed and timer.IsDone()):
+            # Exit out to previous state
+            bFileSelected = False
+            break;
+        
+    camera.position = Vector3(8, 0, 0)
+    return bFileSelected
+        
+def SaveMessageMenu(saveFileName):
+    global saveFileSize
+    saveWaitGameTimer = GameTimer()
+    lastTime = time.ticks_ms()
+    print("On cart Ram is " + str(saveFileSize) + " bytes.")
+    
+    savingText = TextSprite("Saving to")
+    savingText.position = Vector3(0, -1 * positionSpacing, 0)
+    savingText2 = TextSprite(saveFileName)
+    savingText2.position = Vector3(0, 0 * positionSpacing, 0)
+    savingText3 = TextSprite("Remember to")
+    savingText3.position = Vector3(0, 2 * positionSpacing, 0)
+    savingText4 = TextSprite("save in game.")
+    savingText4.position = Vector3(0, 3 * positionSpacing, 0)
+    
+    while (True):
+        engine.tick()
+        currentTime = time.ticks_ms()
+        deltaTimeS = (currentTime - lastTime) / 1000.0
+        lastTime = currentTime
+        saveWaitGameTimer.Tick(deltaTimeS)
+        if (saveWaitGameTimer.IsDone()):
+            break
+    gc.collect()
+
+def LoadCart(fileName):
+    global ramData
+    ramDataMemView = memoryview(ramData)
+    fileH = open(fileName, 'rb')
+    fileH.readinto(ramDataMemView)
+    fileH.close()
+    
+def LoadState(fileName):
+    global ramData
+    ramDataMemView = memoryview(ramData)
+    fileH = open(fileName, 'rb')
+    fileH.seek(maxCartRAMSize, 0)
+    fileH.readinto(ramDataMemView)
+    PeanutGB.SetSaveState(ramData)
+    fileH.seek(0, 0)
+    fileH.readinto(ramDataMemView)
+    fileH.close()
+
+def SaveCart(fileName, fileNameAutoSaveState):
+    global ramData
+    fileH = open(fileName, 'wb')
+    fileH.write(ramData)
+    fileH.close()
+    # Auto save state for each cart save
+    SaveState(fileNameAutoSaveState)
+    SaveMessageMenu(fileName)
+    
+def SaveState(fileName):
+    global ramData
+    fileH = open(fileName, 'wb')
+    fileH.write(ramData)
+    PeanutGB.FillSaveState(ramData)
+    fileH.write(ramData)
+    fileH.close()
+    # Reset RAM data to continue running
+    fileH = open(fileName, 'rb')
+    fileH.readinto(ramData)
+    fileH.close()
+    SaveMessageMenu(fileName)
 
 def FileExists(fileName):
     bFileExists = False
@@ -156,7 +420,6 @@ class GameTimer():
     def IsDone(self):
         return self.currentTime <= 0.0
 
-gameName = ""
 def RomSelectMenu():
     global gameName
     global positionSpacing
@@ -245,8 +508,11 @@ def RomSelectMenu():
         if (engine_io.A.is_pressed):
             fileName = gbFiles[selectedRom]
             gameName = fileName[:-3]
-            camera.position = Vector3(8, 0, 0)
-            break
+            InitEmulator()
+            bSaveSelected = SaveLoadMenu(gameName, False)
+            if (bSaveSelected):
+                camera.position = Vector3(8, 0, 0)
+                break
         
     for text in textList:
         text.mark_destroy_all()
@@ -448,9 +714,10 @@ def SettingsMenu():
         if (menuSelection == 0): # Save
             menuText6.color = selectedColor
             if (inputGameTimer.IsDone() and engine_io.A.is_pressed):
+                bFileSelected = SaveLoadMenu(gameName, True)
                 inputGameTimer.Reset(inputDelayTime)
-                menuSave = True
-                break
+                if (bFileSelected):
+                    break
         elif (menuSelection == 1): # brightness
             menuText7.color = selectedColor
             if (inputGameTimer.IsDone() and (engine_io.LEFT.is_pressed or engine_io.RIGHT.is_pressed or engine_io.A.is_pressed)):
@@ -528,58 +795,173 @@ def UpdateSettingsBuffer():
     displaySettingsBuffer [1] = noScaleOffsetX
     displaySettingsBuffer [2] = noScaleOffsetY
 
+from machine import mem32
 
 audioEnablePin = None
 pwmPin = None
 audioSamples = None
+dmaSamples = None
 maxSamples = 0
 audioSampleIndex = 0
+audioDMA = None
+pwmCCReg = None
+audioDMAControl = None
+audioFQ = 100 * 1000
+pwmTOP = 0
+sampleIndex = 0
+numBuffers = 8
+currentBuffer = 0
+
 def InitAudio():
+    global audioDMA
     global audioEnablePin
     global pwmPin
     global audioSamples
+    global dmaSamples
     global maxSamples
+    global pwmCCReg
+    global audioDMAControl
+    global audioFQ
+    global pwmTOP
     
+    print("PWM FQ " + str(audioFQ))
     numSamplesBuffer = array.array('i', [0])
     # Audio Init
     PeanutGB.InitAPU(numSamplesBuffer)
-    maxSamples = numSamplesBuffer[0]
     
-    print (maxSamples)
-    pmwFQ = 62500
-    
-    audioEnablePin = Pin(20, Pin.OUT)
+    audioEnablePinNum = 20
+    pwmPinNum = 23
+    audioEnablePin = Pin(audioEnablePinNum, Pin.OUT)
     audioEnablePin.value(0)
-    pwmPin = PWM(Pin(23))
-    pwmPin.freq(pmwFQ)
-    pwmPin.duty_u16(0)
+    pwmPin = PWM(Pin(pwmPinNum))
+    pwmPin.freq(audioFQ)
+        
+    pwmSlice = 3
+    pwmChannel = 1 # B Channel
     
-    audioSamples = array.array('h', [0] * maxSamples)
+    print("slice " + str(pwmSlice))
+    print("channel " + str(pwmChannel))
+    
+    # PWM CC register address
+    pwmRegBase = 0x400a8000
+    offsetToCCReg = 0x00c
+    registersPerChannel = 0x14
+    pwmCCReg = pwmRegBase + pwmSlice * registersPerChannel + offsetToCCReg + pwmChannel * 2
+    print("pwmCCReg " + hex(pwmCCReg))
+    pwmTOP = mem32[pwmCCReg + 2]
+    print("pwmTOPReg " + str(pwmTOP))
+    
+    audioSamples = array.array('h', [0] * 4)
+    dmaSamples = array.array('H', [0] * 4)
+    
+    print("DMA Samples " + str(len(dmaSamples)))
     
     audioEnablePin.value(1)
     
-    sampleRate = 22050
-    audioSystemTimer = Timer()
-    audioSystemTimer.init(freq=sampleRate, mode=Timer.PERIODIC, callback=audioISR)
-    
+    pwmPin.duty_u16(0)
 
-def audioISR(timer):
+    return
+
+    # Setup PWM before DMA
+    DREQ_PWM_WRAP0 = 32
+
+    audioDMA = DMA()
+    print("DMA channel " + str(audioDMA.channel))
+
+    audioDMAControl = audioDMA.pack_ctrl(
+        size          = 1,    # ushort writes
+        inc_read      = True,
+        inc_write     = False,
+        treq_sel      = DREQ_PWM_WRAP0 + pwmSlice,
+        high_pri      = True
+    )
+
+    audioDMA.config(
+        read      = dmaSamples,
+        write     = pwmCCReg,
+        count     = len(dmaSamples),
+        ctrl      = audioDMAControl,
+        trigger   = True
+    )
+
+sampleRate = 8 * 1000
+delay = int(1_000_000 / sampleRate)
+
+SAMPLE_RATE = 8000
+FREQ = 440
+phase1 = 0
+phase2 = 0
+AMP1 = 8000  * 4
+AMP2 = 8000  * 4
+
+#@micropython.native
+def audio_tick():
     global pwmPin
-    global audioSamples
-    global maxSamples
-    global audioSampleIndex
+    global pwmTOP
+    global dmaSamples
+    global AMP1
+    global phase1
+    global AMP2
+    global phase2
     
-    volume = 64
-    if (audioSampleIndex < maxSamples):
-        sample = int(audioSamples[audioSampleIndex])
-        sample += 32768
-        sample //= volume
-        pwmPin.duty_u16(sample)
-        audioSampleIndex += 2 
+    phase_inc1 = dmaSamples[0] / SAMPLE_RATE
+    phase_inc2 = dmaSamples[2] / SAMPLE_RATE
+
+    AMP1 = dmaSamples[1] * 2024
+    AMP2 = dmaSamples[3] * 1024
+
+    phase1 += phase_inc1
+    if phase1 >= 1.0:
+        phase1 -= 1.0
+    
+    phase2 += phase_inc2
+    if phase2 >= 1.0:
+        phase2 -= 1.0
+
+    # square wave
+    s = AMP1 if phase1 < 0.5 else -AMP1
+    
+    s2 = AMP2 if phase2 < 0.5 else -AMP2
+
+    # center around 50% duty
+    pwmPin.duty_u16(((32768 + s + s2) * pwmTOP) // 65535)
+
+def AudioLoop():
+    while (True):
+        time.sleep_us(delay)
+        audio_tick()
+        
+# Read from FS for ROM banks past 1.5MB
+# ROM reads in this range happen on core1
+# Natmod callbacks do not work with this firmware
+# ISRs see frozen globals from Python VM
+# This routine only needs to run when processing emulator steps
+def FillTableEntry(tableID, bankID, romFileH, memView):
+    global romFSFile
+    global bankTable
+    global bankSize
+    romFileH.seek(bankID * bankSize, 0)
+    romFileH.readinto(memView[tableID * bankSize : (tableID + 1) * bankSize])
+def RomBankTableUpdate():
+    global romFSBuffer
+    global romFileH
+    global romFileName
+    romFileH = open(romFileName, 'rb')
+    memView = memoryview(bankTable)
+    while (True):
+        if (romFSBuffer[0] == 0): # No ROM bank table miss
+            continue
+        else:
+            bankID = romFSBuffer[1]
+            tableID = romFSBuffer[2]
+            FillTableEntry(tableID, bankID, romFileH, memView)
+            romFSBuffer[0] = 0 # ROM bank table update finished
 
 def Main():
     global romScratchAddress
     global gameName
+    global romFileName
+    global romSelected
     global positionSpacing
     global displaySettingsBuffer
     global maxPanX
@@ -591,64 +973,39 @@ def Main():
     global menuShowControls
     global menuSave
     global menuPanning
-    global audioSampleIndex
+    global audioSamples
+    global dmaSamples
+    global audioFQ
+    global pwmTOP
+    
+    global currentBuffer
+    global sampleRate
+    
+    global romFSBuffer
+    global romRSTimer
+    
+    global romFSFile
+        
     engine.tick()
-    engine.fps_limit(60)
+    engine.fps_limit(30)
     
     RomSelectMenu()
     engine.tick()
     gc.collect()
     InfoMenu()
     
-    #gameName = "PokemonRed"
-    romFileName = gameName + ".gb"
-    #ROMs can exceed 256KB, allocate to scratch
     LoadROMScratch(romFileName)
-    romArray = romScratchAddress
-    saveSizeBuffer = array.array('i', [0])
-            
-    PeanutGB.InitPeanut(
-        romArray,
-        saveSizeBuffer
-        )
     
-    saveFileSize = saveSizeBuffer[0]
-    print("On cart Ram is " + str(hex(saveFileSize)) + " bytes.")
+    _thread.start_new_thread(RomBankTableUpdate, ())
+    
+    print("Peanut Initialized")
     
     # On cart RAM can be used for tasks other than save data
     # must allocate in device RAM
     engine.tick()
     gc.collect()
     freeBytes = gc.mem_free()
-    print("Total fragmented bytes free before cart RAM allocation: " + str(freeBytes))
-    bSaving = False
-    saveFile = None
-    ramData = array.array('B', [])
-    if(saveFileSize > 0):
-        saveFileName = gameName + ".sav"
-        bFileExists = FileExists(saveFileName)
-        if (bFileExists):
-            print("Save file " + saveFileName + " found.")
-            saveFile = open(saveFileName, 'rb')
-            totalRamRead = 0
-            readSize = 256
-            while totalRamRead < saveFileSize:
-                readData = saveFile.read(readSize)
-                tempReadArray = array.array('B', readData)
-                ramData.extend(tempReadArray)
-                totalRamRead += readSize
-                gc.collect()
-        else:
-            print("No save found, " + saveFileName + " created.")
-            totalRamWrite = 0
-            writeSize = 256
-            saveFile = open(saveFileName, 'wb')
-            tempWriteArray = array.array('B', [0] * writeSize)
-            while totalRamWrite < saveFileSize:
-                ramData.extend(tempWriteArray)
-                saveFile.write(tempWriteArray)
-                totalRamWrite += writeSize
-        saveFile.close()
+    print("Total fragmented bytes free before cart RAM allocation: " + str(freeBytes))        
                 
     JOYPAD_A            = 0x01
     JOYPAD_B            = 0x02
@@ -664,39 +1021,40 @@ def Main():
     saveMsgTime = 3.0
     displayPanTime = 0.05
     menuTime = 1.5
-    saveMsgGameTimer = GameTimer()
-    saveWaitGameTimer = GameTimer()
     displayPanGameTimer = GameTimer()
     menuGameTimer = GameTimer()
-    savingText = None
-    savingText2 = None
-    savingText3 = None
-    savingText4 = None
     
     bAPUEnabled = False
     bPPUEnabled = True
     bEnableFrameSkip = True
+        
+    freeBytes = gc.mem_free()
+    print("Total bytes free after all RAM allocations: " + str(freeBytes))
     
     if (bAPUEnabled):
         InitAudio()
+        #_thread.start_new_thread(AudioLoop, ())
     gc.collect()
     
     while(True):
         if engine.tick():
-            if (menuGameTimer.IsDone() and saveMsgGameTimer.IsDone() and engine_io.RB.is_pressed):
+            if (menuGameTimer.IsDone() and engine_io.RB.is_pressed):
                 menuGameTimer.Reset(menuTime)
-                SettingsMenu()
-                # Move time ticks up to current time
-                lastTime = time.ticks_ms()
-
-                if (menuShowControls):
-                    menuShowControls = False
-                    InfoMenu()
-                if (menuPanning):
-                    menuPanning = False
-                    PanningMenu()
-                gc.collect()
-                continue
+                # Handle quick save menu
+                if (engine_io.MENU.is_pressed):
+                    SaveLoadMenu(gameName, True)
+                else:
+                    SettingsMenu()
+                    # Move time ticks up to current time
+                    lastTime = time.ticks_ms()
+                    if (menuShowControls):
+                        menuShowControls = False
+                        InfoMenu()
+                    if (menuPanning):
+                        menuPanning = False
+                        PanningMenu()
+                    gc.collect()
+                    continue
             else:
                 SetControllerState(JOYPAD_LEFT, engine_io.LEFT.is_pressed)
                 SetControllerState(JOYPAD_RIGHT, engine_io.RIGHT.is_pressed)
@@ -706,42 +1064,13 @@ def Main():
                 SetControllerState(JOYPAD_B, engine_io.B.is_pressed)
                 SetControllerState(JOYPAD_START, engine_io.MENU.is_pressed)
                 SetControllerState(JOYPAD_SELECT, engine_io.LB.is_pressed)
-            
+
             currentTime = time.ticks_ms()
             deltaTimeS = (currentTime - lastTime) / 1000.0
             lastTime = currentTime
             
-            saveMsgGameTimer.Tick(deltaTimeS)
-            saveWaitGameTimer.Tick(deltaTimeS)
             displayPanGameTimer.Tick(deltaTimeS)
             menuGameTimer.Tick(deltaTimeS)
-
-            if (menuSave or (not(bSaving) and saveWaitGameTimer.IsDone() and engine_io.LB.is_pressed and engine_io.MENU.is_pressed)):
-                menuSave = False
-                bSaving = True
-                saveMsgGameTimer.Reset(saveMsgTime)
-                saveWaitGameTimer.Reset(saveWaitTime)
-                if (saveFileSize > 0):
-                    print("Saving to " + saveFileName)
-                    saveFile = open(saveFileName, 'wb')
-                    saveFile.write(ramData)
-                    saveFile.close()
-                    savingText = TextSprite("Saving to")
-                    savingText.position = Vector3(0, -1 * positionSpacing, 0)
-                    savingText2 = TextSprite(saveFileName)
-                    savingText2.position = Vector3(0, 0 * positionSpacing, 0)
-                    savingText3 = TextSprite("Remember to")
-                    savingText3.position = Vector3(0, 2 * positionSpacing, 0)
-                    savingText4 = TextSprite("save in game.")
-                    savingText4.position = Vector3(0, 3 * positionSpacing, 0)
-                else:
-                    savingText = TextSprite("ROM has no ")
-                    savingText.position = Vector3(0, -1 * positionSpacing, 0)
-                    savingText2 = TextSprite("save function.")
-                    savingText2.position = Vector3(0, 0 * positionSpacing, 0)
-                gc.collect()
-            else:
-                bSaving = False
                     
             if (displayPanGameTimer.IsDone() and engine_io.LB.is_pressed and not engine_io.MENU.is_pressed):
                 if (engine_io.LEFT.is_pressed):
@@ -758,15 +1087,6 @@ def Main():
                     displayPanGameTimer.Reset(displayPanTime)
                 noScaleOffsetX = max(0, min(noScaleOffsetX, maxPanX))
                 noScaleOffsetY = max(0, min(noScaleOffsetY, maxPanY))
-                
-            if (saveMsgGameTimer.IsDone()):
-                savingText = None
-                savingText2 = None
-                savingText3 = None
-                savingText4 = None
-                gc.collect()
-            else:
-                continue
             
             framesPerEmuSpeed = 1
             if (scalingType == 0):
@@ -783,21 +1103,22 @@ def Main():
 
             if(bPPUEnabled):
                 UpdateSettingsBuffer()
-
                 displayBuffer = engine_draw.back_fb_data()
                 PeanutGB.ResampleBuffer(
                     displayBuffer,
+                    scratchFilterBuffer,
                     displaySettingsBuffer
                     )
             
-            if (bAPUEnabled):
-                PeanutGB.SampleAPU(audioSamples)
-                audioSampleIndex = 0
-            
-    
+            if(bAPUEnabled):
+                samplingSettings = array.array('i', [0] * 3)
+                samplingSettings[0] = int(pwmTOP)
+                samplingSettings[1] = 0
+                PeanutGB.SampleAPU(
+                    audioSamples,
+                    dmaSamples,
+                    samplingSettings)
+
 Main()
-
-
-
-
+    
 

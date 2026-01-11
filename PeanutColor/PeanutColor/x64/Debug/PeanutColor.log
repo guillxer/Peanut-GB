@@ -1,10 +1,12 @@
 ﻿  peanut_sdl.c
-C:\Peanut-GB\peanut_gb.h(2172,19): warning C4244: '=': conversion from 'int16_t' to 'uint8_t', possible loss of data
-C:\Peanut-GB\peanut_sdl.c(550,24): warning C4267: '=': conversion from 'size_t' to 'unsigned int', possible loss of data
-C:\Peanut-GB\peanut_sdl.c(781,44): warning C4244: 'function': conversion from 'float' to 'Uint8', possible loss of data
-C:\Peanut-GB\peanut_sdl.c(781,58): warning C4244: 'function': conversion from 'float' to 'Uint8', possible loss of data
-C:\Peanut-GB\peanut_sdl.c(781,74): warning C4244: 'function': conversion from 'float' to 'Uint8', possible loss of data
-C:\Peanut-GB\peanut_sdl.c(819,4): warning C4013: 'memset' undefined; assuming extern returning int
-C:\Peanut-GB\peanut_sdl.c(850,1): warning C4005: 'main': macro redefinition
+C:\Peanut-GB\peanut_gb.h(2174,19): warning C4244: '=': conversion from 'int16_t' to 'uint8_t', possible loss of data
+C:\Peanut-GB\peanut_sdl.c(375,57): warning C4020: 'minigb_apu_audio_callback': too many actual parameters
+C:\Peanut-GB\peanut_sdl.c(849,24): warning C4267: '=': conversion from 'size_t' to 'unsigned int', possible loss of data
+C:\Peanut-GB\peanut_sdl.c(881,62): warning C4020: 'minigb_apu_audio_callback': too many actual parameters
+C:\Peanut-GB\peanut_sdl.c(1104,44): warning C4244: 'function': conversion from 'float' to 'Uint8', possible loss of data
+C:\Peanut-GB\peanut_sdl.c(1104,58): warning C4244: 'function': conversion from 'float' to 'Uint8', possible loss of data
+C:\Peanut-GB\peanut_sdl.c(1104,74): warning C4244: 'function': conversion from 'float' to 'Uint8', possible loss of data
+C:\Peanut-GB\peanut_sdl.c(1142,4): warning C4013: 'memset' undefined; assuming extern returning int
+C:\Peanut-GB\peanut_sdl.c(1172,1): warning C4005: 'main': macro redefinition
 C:\Peanut-GB\SDL2-2.32.8\include\SDL_main.h(143,1): message : see previous definition of 'main'
   PeanutColor.vcxproj -> C:\Peanut-GB\PeanutColor\x64\Debug\PeanutColor.exe

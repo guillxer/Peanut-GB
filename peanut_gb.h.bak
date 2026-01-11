@@ -41,11 +41,13 @@
 # define __has_include(x) 0
 #endif
 
+#if defined(_WIN32)
 //#include <stdlib.h>	/* Required for abort */
-//#include <stdbool.h>	/* Required for bool types */
+#include <stdbool.h>	/* Required for bool types */
 //#include <stdint.h>	/* Required for int types */
 //#include <string.h>	/* Required for memset */
 //#include <time.h>	/* Required for tm struct */
+#endif
 
 /**
 * If PEANUT_GB_IS_LITTLE_ENDIAN is positive, then Peanut-GB will be configured
@@ -80,8 +82,10 @@
  * audio_write() functions are provided, define ENABLE_SOUND to a non-zero value
  * before including peanut_gb.h in order for these functions to be used.
  */
+# define ENABLE_SOUND 1
+
 #ifndef ENABLE_SOUND
-# define ENABLE_SOUND 0
+# define ENABLE_SOUND 1
 #endif
 
 /* Enable LCD drawing. On by default. May be turned off for testing purposes. */
@@ -92,7 +96,7 @@
 /* Enable 16 bit colour palette. If disabled, only four colour shades are set in
  * pixel data. */
 #ifndef PEANUT_GB_12_COLOUR
-# define PEANUT_GB_12_COLOUR 0
+# define PEANUT_GB_12_COLOUR 1
 #endif
 
 /* Adds more code to improve LCD rendering accuracy. */

@@ -7,7 +7,7 @@
 
 #pragma once
 
-//#include <stdint.h>
+#include <stdint.h>
 
 #ifndef AUDIO_SAMPLE_RATE
 # define AUDIO_SAMPLE_RATE	32768
@@ -122,8 +122,13 @@ struct minigb_apu_ctx {
  * \param stream Allocated pointer to store audio samples. Must be at least
  *		AUDIO_SAMPLES_TOTAL in size.
  */
-void minigb_apu_audio_callback(struct minigb_apu_ctx *ctx,
-		audio_sample_t *stream);
+void minigb_apu_audio_callback(
+		struct minigb_apu_ctx *ctx,
+		audio_sample_t *stream,
+		unsigned short *dmaStream,
+		int pwmTOP,
+		int bufferIndex,
+		int mixMode);
 
 /**
  * Read audio register at given address "addr".

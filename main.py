@@ -46,6 +46,8 @@ fsCallback = None
 romFileName = None
 gameName = None
 saveStateSelected = False
+core1Running = False
+core1Finished = False
 
 camera = CameraNode()
 textFont = FontResource("font3x5.bmp")
@@ -123,7 +125,7 @@ def ForceFlush():
         gc.collect()
 
 maxResidentScratchRomSize = (1024 + 512) * 1024
-def LoadROMScratch(fileName, maxRomPages = maxResidentScratchRomSize):
+def LoadROMScratch(fileName, maxRomPages = maxResidentScratchRomSize, bShowLoading = True):
     global romScratchAddress
     global romFile
     loadingText = TextSprite("")
@@ -137,7 +139,8 @@ def LoadROMScratch(fileName, maxRomPages = maxResidentScratchRomSize):
     romScratchAddress = GlobalBlockAllocator.GetBaseAddress()
     while totalDataRead < romSizeScratch:
         percentStr = str(int(totalDataRead / romSizeScratch * 100.0 + 1.0))
-        loadingText.text = "Loading " + percentStr + " %"
+        if (bShowLoading):
+            loadingText.text = "Loading " + percentStr + " %"
         loadingProgress = f"Loading ROM " + percentStr + " percent."
         print(loadingProgress, end='\r')
         engine.tick()
@@ -153,6 +156,14 @@ machine.freq(clockRate)
 
 controllerStateBuffer = array.array('B', [0xff])
 
+def Exit():
+    global core1Running
+    if (core1Running and not core1Finished):
+        core1Running = False
+        while(not core1Finished):
+            pass
+    machine.reset()
+
 def InitEmulator():
     global romFileName
     global romArray
@@ -161,7 +172,7 @@ def InitEmulator():
     global saveFileSize
     romFileName = gameName + ".gb"
     # Load enough pages to initialize memory
-    LoadROMScratch(romFileName, 4096 * 4)
+    LoadROMScratch(romFileName, 4096 * 4, False)
     romArray = romScratchAddress
     PeanutGB.InitPeanut(
         romArray,
@@ -217,10 +228,6 @@ def SaveLoadMenu(romName, bSaveMode):
     bFileSelected = False
     saveList = PopulateSaveList(romName)
     
-    if (not(bSaveMode) and len(saveList) <= 0):
-        InitEmulator()
-        return True
-    
     selectedColor = Color(1.0, 1.0, 1.0)
     unselectedColor = Color(0.5, 0.5, 0.5)
     
@@ -269,6 +276,10 @@ def SaveLoadMenu(romName, bSaveMode):
         saveFileNameList.append(romName + SAVE_SUFFIX_LIST[i])
     
     numSaves = len(saveTextListInd)
+    
+    if (not(bSaveMode) and numSaves <= 0):
+        InitEmulator()
+        return True
     
     timer = GameTimer()
     inputDelayTime = 0.3
@@ -324,31 +335,6 @@ def SaveLoadMenu(romName, bSaveMode):
         
     camera.position = Vector3(8, 0, 0)
     return bFileSelected
-        
-def SaveMessageMenu(saveFileName):
-    global saveFileSize
-    saveWaitGameTimer = GameTimer()
-    lastTime = time.ticks_ms()
-    print("On cart Ram is " + str(saveFileSize) + " bytes.")
-    
-    savingText = TextSprite("Saving to")
-    savingText.position = Vector3(0, -1 * positionSpacing, 0)
-    savingText2 = TextSprite(saveFileName)
-    savingText2.position = Vector3(0, 0 * positionSpacing, 0)
-    savingText3 = TextSprite("Remember to")
-    savingText3.position = Vector3(0, 2 * positionSpacing, 0)
-    savingText4 = TextSprite("save in game.")
-    savingText4.position = Vector3(0, 3 * positionSpacing, 0)
-    
-    while (True):
-        engine.tick()
-        currentTime = time.ticks_ms()
-        deltaTimeS = (currentTime - lastTime) / 1000.0
-        lastTime = currentTime
-        saveWaitGameTimer.Tick(deltaTimeS)
-        if (saveWaitGameTimer.IsDone()):
-            break
-    gc.collect()
 
 def LoadCart(fileName):
     global ramData
@@ -375,7 +361,6 @@ def SaveCart(fileName, fileNameAutoSaveState):
     fileH.close()
     # Auto save state for each cart save
     SaveState(fileNameAutoSaveState)
-    SaveMessageMenu(fileName)
     
 def SaveState(fileName):
     global ramData
@@ -388,7 +373,6 @@ def SaveState(fileName):
     fileH = open(fileName, 'rb')
     fileH.readinto(ramData)
     fileH.close()
-    SaveMessageMenu(fileName)
 
 def FileExists(fileName):
     bFileExists = False
@@ -455,7 +439,7 @@ def RomSelectMenu():
         while (True):
             engine.tick()
             if (engine_io.A.is_pressed or engine_io.MENU.is_pressed):
-                sys.exit()
+                Exit()
     headerText.SetColor(Color(0.5, 0.0, 0.5))
     headerText.position = Vector3(0, 2 * positionSpacing, 0)
     
@@ -577,13 +561,15 @@ def InfoMenu():
     infoText4.position = Vector3(0, -1 * positionSpacing, 0)
     infoText5 = TextSprite("RB <> EMU Menu")
     infoText5.position = Vector3(0, 0 * positionSpacing, 0)
-    infoText6 = TextSprite("LB + Menu <> Save")
+    infoText6 = TextSprite("Menu + LB <> Save")
     infoText6.position = Vector3(0, 1 * positionSpacing, 0)
     infoText7 = TextSprite("LB + D-Pad <> Pan")
     infoText7.position = Vector3(0, 2 * positionSpacing, 0)
+    infoText8 = TextSprite("Menu + RB <> Color")
+    infoText8.position = Vector3(0, 3 * positionSpacing, 0)
     
-    infoText8 = TextSprite("Press to Continue")
-    infoText8.position = Vector3(0, 4 * positionSpacing, 0)
+    infoText9 = TextSprite("Press to Continue")
+    infoText9.position = Vector3(0, 5 * positionSpacing, 0)
     
     inputTime = 0.5
     inputGameTimer = GameTimer()
@@ -654,7 +640,7 @@ def SettingsMenu():
     menuText = TextSprite("Scaling:")
     menuText.position = Vector3(0, -1 * positionSpacing, 0)
     menuText2 = TextSprite("")
-    menuText2.text = windowScalingText
+    menuText2.text = windowScalingText if scalingType == 0 else noScalingText
     menuText2.position = Vector3(0, 0 * positionSpacing, 0)
     menuText3 = TextSprite("")
     menuText3.text = "Game Speed: " + GetFormatedEmuStr(emuSpeed)
@@ -768,7 +754,7 @@ def SettingsMenu():
         else: # quit emu, reboot kit
             menuText4.color = selectedColor
             if (engine_io.A.is_pressed):
-                sys.exit()
+                Exit()
     
     menuText.mark_destroy_all()
     menuText2.mark_destroy_all()
@@ -946,9 +932,11 @@ def RomBankTableUpdate():
     global romFSBuffer
     global romFileH
     global romFileName
+    global core1Finished
+    global core1Running
     romFileH = open(romFileName, 'rb')
     memView = memoryview(bankTable)
-    while (True):
+    while (core1Running):
         if (romFSBuffer[0] == 0): # No ROM bank table miss
             continue
         else:
@@ -956,6 +944,7 @@ def RomBankTableUpdate():
             tableID = romFSBuffer[2]
             FillTableEntry(tableID, bankID, romFileH, memView)
             romFSBuffer[0] = 0 # ROM bank table update finished
+    core1Finished = True
 
 def Main():
     global romScratchAddress
@@ -985,6 +974,8 @@ def Main():
     global romRSTimer
     
     global romFSFile
+    global core1Running
+    global core1Finished
         
     engine.tick()
     engine.fps_limit(30)
@@ -996,6 +987,8 @@ def Main():
     
     LoadROMScratch(romFileName)
     
+    core1Running = True
+    core1Finished = False
     _thread.start_new_thread(RomBankTableUpdate, ())
     
     print("Peanut Initialized")
@@ -1027,6 +1020,9 @@ def Main():
     bAPUEnabled = False
     bPPUEnabled = True
     bEnableFrameSkip = True
+    
+    paletteIndex = 0
+    paletteIndexBuffer = bytearray(1);
         
     freeBytes = gc.mem_free()
     print("Total bytes free after all RAM allocations: " + str(freeBytes))
@@ -1038,12 +1034,18 @@ def Main():
     
     while(True):
         if engine.tick():
-            if (menuGameTimer.IsDone() and engine_io.RB.is_pressed):
-                menuGameTimer.Reset(menuTime)
-                # Handle quick save menu
-                if (engine_io.MENU.is_pressed):
-                    SaveLoadMenu(gameName, True)
-                else:
+            
+            currentTime = time.ticks_ms()
+            deltaTimeS = (currentTime - lastTime) / 1000.0
+            lastTime = currentTime
+            
+            displayPanGameTimer.Tick(deltaTimeS)
+            menuGameTimer.Tick(deltaTimeS)
+            
+            if (menuGameTimer.IsDone()):
+                if (engine_io.RB.is_pressed and not engine_io.MENU.is_pressed):
+                    menuGameTimer.Reset(menuTime)
+                    # Handle quick save menu
                     SettingsMenu()
                     # Move time ticks up to current time
                     lastTime = time.ticks_ms()
@@ -1055,22 +1057,26 @@ def Main():
                         PanningMenu()
                     gc.collect()
                     continue
-            else:
-                SetControllerState(JOYPAD_LEFT, engine_io.LEFT.is_pressed)
-                SetControllerState(JOYPAD_RIGHT, engine_io.RIGHT.is_pressed)
-                SetControllerState(JOYPAD_UP, engine_io.UP.is_pressed)
-                SetControllerState(JOYPAD_DOWN, engine_io.DOWN.is_pressed)
-                SetControllerState(JOYPAD_A, engine_io.A.is_pressed)
-                SetControllerState(JOYPAD_B, engine_io.B.is_pressed)
-                SetControllerState(JOYPAD_START, engine_io.MENU.is_pressed)
-                SetControllerState(JOYPAD_SELECT, engine_io.LB.is_pressed)
-
-            currentTime = time.ticks_ms()
-            deltaTimeS = (currentTime - lastTime) / 1000.0
-            lastTime = currentTime
-            
-            displayPanGameTimer.Tick(deltaTimeS)
-            menuGameTimer.Tick(deltaTimeS)
+                elif (engine_io.LB.is_pressed and engine_io.MENU.is_pressed):
+                    menuGameTimer.Reset(menuTime)
+                    SaveLoadMenu(gameName, True)
+                    continue
+                elif (engine_io.RB.is_pressed and engine_io.MENU.is_pressed):
+                    paletteIndexBuffer[0] = paletteIndex
+                    PeanutGB.SetPalette(paletteIndexBuffer)
+                    paletteIndex += 1
+                    if paletteIndex >= 13:
+                        paletteIndex = 0
+                    continue
+                
+            SetControllerState(JOYPAD_LEFT, engine_io.LEFT.is_pressed)
+            SetControllerState(JOYPAD_RIGHT, engine_io.RIGHT.is_pressed)
+            SetControllerState(JOYPAD_UP, engine_io.UP.is_pressed)
+            SetControllerState(JOYPAD_DOWN, engine_io.DOWN.is_pressed)
+            SetControllerState(JOYPAD_A, engine_io.A.is_pressed)
+            SetControllerState(JOYPAD_B, engine_io.B.is_pressed)
+            SetControllerState(JOYPAD_START, engine_io.MENU.is_pressed)
+            SetControllerState(JOYPAD_SELECT, engine_io.LB.is_pressed)
                     
             if (displayPanGameTimer.IsDone() and engine_io.LB.is_pressed and not engine_io.MENU.is_pressed):
                 if (engine_io.LEFT.is_pressed):

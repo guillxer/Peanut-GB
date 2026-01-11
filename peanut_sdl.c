@@ -129,6 +129,8 @@ void FillSaveStateImpl(
 	unsigned char* saveStateData);
 void SetSaveStateImpl(
 	unsigned char* saveStateData);
+void SetPaletteImpl(
+	unsigned char selectionIndex);
 
 #if RP2
 static mp_obj_t InitPeanut(
@@ -309,6 +311,23 @@ static mp_obj_t SetSaveState(
 	return mp_const_none;
 }
 
+static mp_obj_t SetPalette(
+	mp_obj_fun_bc_t* self,
+	size_t n_args,
+	size_t n_kw,
+	mp_obj_t* args)
+{
+	int argindex = 0;
+	
+	mp_buffer_info_t paletteIndexBuffer;
+	mp_get_buffer_raise(args[argindex++], &paletteIndexBuffer, MP_BUFFER_RW);
+	unsigned char* paletteIndexData = paletteIndexBuffer.buf;
+	
+	SetPaletteImpl(paletteIndexData[0]);
+	
+	return mp_const_none;
+}
+
 mp_obj_t mpy_init(mp_obj_fun_bc_t* self, size_t n_args, size_t n_kw, mp_obj_t* args) {
 	MP_DYNRUNTIME_INIT_ENTRY
 	mp_store_global(
@@ -332,6 +351,9 @@ mp_obj_t mpy_init(mp_obj_fun_bc_t* self, size_t n_args, size_t n_kw, mp_obj_t* a
 	mp_store_global(
 		MP_QSTR_SetSaveState,
 		MP_DYNRUNTIME_MAKE_FUNCTION(SetSaveState));
+	mp_store_global(
+		MP_QSTR_SetPalette,
+		MP_DYNRUNTIME_MAKE_FUNCTION(SetPalette));
 	MP_DYNRUNTIME_INIT_EXIT
 }
 #endif
@@ -614,11 +636,850 @@ void gb_error(
 	// TODO move error messages here
 }
 
+void auto_assign_palette(struct priv_t* priv, uint8_t game_checksum);
+
+uint8_t game_checksum_saved;
+void select_palette(
+	struct priv_t* priv, 
+	unsigned char selection_index)
+{
+	switch (selection_index)
+	{
+		case 0:{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7eac, 0x40a0, 0x0, },
+				{ 0x7fff, 0x7eac, 0x40a0, 0x0, },
+				{ 0x7fff, 0x7eac, 0x40a0, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 1:{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x3be5, 0x200, 0x0, },
+				{ 0x7fff, 0x329f, 0x1f, 0x0, },
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 2:{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7eac, 0x40a0, 0x0, },
+				{ 0x7fff, 0x7eac, 0x40a0, 0x0, },
+				{ 0x7f77, 0x6650, 0x41a4, 0x28a0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 3:{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+				{ 0x7fff, 0x3be5, 0x200, 0x0, },
+				{ 0x7fff, 0x329f, 0x1f, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 4:{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+				{ 0x7fff, 0x7eac, 0x40a0, 0x0, },
+				{ 0x7fff, 0x463a, 0x2531, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 5:{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x5294, 0x2529, 0x0, },
+				{ 0x7fff, 0x5294, 0x2529, 0x0, },
+				{ 0x7fff, 0x5294, 0x2529, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 6:{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7ff4, 0x7e31, 0x463f, 0x0, },
+				{ 0x7ff4, 0x7e31, 0x463f, 0x0, },
+				{ 0x7ff4, 0x7e31, 0x463f, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 7:{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7fe0, 0x7c00, 0x0, },
+				{ 0x7fff, 0x7fe0, 0x7c00, 0x0, },
+				{ 0x7fff, 0x7fe0, 0x7c00, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 8:{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x329f, 0x1f, 0x0, },
+				{ 0x7fff, 0x3be5, 0x200, 0x0, },
+				{ 0x7fff, 0x7fe0, 0x3900, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 9:{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x27e0, 0x7d00, 0x0, },
+				{ 0x7fff, 0x27e0, 0x7d00, 0x0, },
+				{ 0x7fff, 0x27e0, 0x7d00, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 10:{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+				{ 0x7fff, 0x3be5, 0x197, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 11:{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x0, 0x210, 0x7f40, 0x7fff, },
+				{ 0x0, 0x210, 0x7f40, 0x7fff, },
+				{ 0x0, 0x210, 0x7f40, 0x7fff, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 12:{
+			auto_assign_palette(priv, game_checksum_saved);
+		}
+		default:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7FFF, 0x5294, 0x294A, 0x0000 },
+				{ 0x7FFF, 0x5294, 0x294A, 0x0000 },
+				{ 0x7FFF, 0x5294, 0x294A, 0x0000 }
+			};
+			for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+		}
+	}
+}
+
 void auto_assign_palette(struct priv_t* priv, uint8_t game_checksum)
 {
+	game_checksum_saved = game_checksum;
 	//size_t palette_bytes = 3 * 4 * sizeof(uint16_t);
 	switch (game_checksum)
 	{
+		case 0xB3:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7da0, 0x4500, 0x0, },
+				{ 0x7fff, 0x7da0, 0x4500, 0x0, },
+				{ 0x7fff, 0x56b0, 0x21ae, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x59:
+		case 0xC6:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7da0, 0x4500, 0x0, },
+				{ 0x7fff, 0x2adf, 0x7c00, 0x1f, },
+				{ 0x7fff, 0x56b0, 0x21ae, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x8C:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7ff2, 0x46df, 0x322d, 0xe7, },
+				{ 0x7ff2, 0x46df, 0x322d, 0xe7, },
+				{ 0x7ff2, 0x46df, 0x322d, 0xe7, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x86:
+		case 0xA8:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7ee8, 0x7f40, 0x44e0, 0x2000, },
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+				{ 0x7ff2, 0x46df, 0x322d, 0xe7, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0xBF:
+		case 0xCE:
+		case 0xD1:
+		case 0xF0:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7fff, 0x329f, 0x1f, },
+				{ 0x7fff, 0x7eac, 0x40a0, 0x0, },
+				{ 0x37e0, 0x7fff, 0x7d28, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x36:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7fff, 0x329f, 0x1f, },
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+				{ 0x2740, 0x7e00, 0x7fe0, 0x7fff, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x34:
+		case 0x66:
+		case 0xF4:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+				{ 0x7fff, 0x3be0, 0x59a0, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x3D:
+		case 0x6A:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+				{ 0x7fff, 0x27e0, 0x7d00, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x95:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x27e0, 0x7d00, 0x0, },
+				{ 0x7fff, 0x2adf, 0x7c00, 0x1f, },
+				{ 0x7fff, 0x27e0, 0x7d00, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x71:
+		case 0xFF:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7e40, 0x7c00, 0x0, },
+				{ 0x7fff, 0x7e40, 0x7c00, 0x0, },
+				{ 0x7fff, 0x7e40, 0x7c00, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x19:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+				{ 0x7fff, 0x7e40, 0x7c00, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x3E:
+		case 0xE0:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7e40, 0x7c00, 0x0, },
+				{ 0x7fff, 0x2adf, 0x7c00, 0x1f, },
+				{ 0x7fff, 0x7e40, 0x7c00, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x15:
+		case 0xDB:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7fe0, 0x7c00, 0x0, },
+				{ 0x7fff, 0x7fe0, 0x7c00, 0x0, },
+				{ 0x7fff, 0x7fe0, 0x7c00, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x0D:
+		case 0x69:
+		case 0xF2:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7fe0, 0x7c00, 0x0, },
+				{ 0x7fff, 0x2adf, 0x7c00, 0x1f, },
+				{ 0x7fff, 0x7fe0, 0x7c00, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x88:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x525f, 0x7fe0, 0x180, 0x0, },
+				{ 0x525f, 0x7fe0, 0x180, 0x0, },
+				{ 0x525f, 0x7fe0, 0x180, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x1D:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7d89, 0x6800, 0x3000, 0x0, },
+				{ 0x7d89, 0x6800, 0x3000, 0x0, },
+				{ 0x525f, 0x7fe0, 0x180, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x27:
+		case 0x49:
+		case 0x5C:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7d89, 0x6800, 0x3000, 0x0, },
+				{ 0x1f, 0x7fff, 0x7fee, 0x21f, },
+				{ 0x525f, 0x7fe0, 0x180, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0xC9:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7da0, 0x4500, 0x0, },
+				{ 0x7fff, 0x329f, 0x1f, 0x0, },
+				{ 0x7ff9, 0x33bd, 0x4a05, 0x294a, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x46:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x0, 0x7fff, 0x7e10, 0x44e7, },
+				{ 0x0, 0x7fff, 0x7e10, 0x44e7, },
+				{ 0x5adf, 0x7ff1, 0x5548, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x61:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+				{ 0x7fff, 0x329f, 0x1f, 0x0, },
+				{ 0x7fff, 0x329f, 0x1f, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x3C:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x329f, 0x1f, 0x0, },
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+				{ 0x7fff, 0x329f, 0x1f, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x4E:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+				{ 0x7fff, 0x7fee, 0x21f, 0x7c00, },
+				{ 0x7fff, 0x329f, 0x1f, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x9C:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x463a, 0x2531, 0x0, },
+				{ 0x7ee8, 0x7f40, 0x44e0, 0x2000, },
+				{ 0x7fff, 0x463a, 0x2531, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x18:
+		case 0x6B:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7ee8, 0x7f40, 0x44e0, 0x2000, },
+				{ 0x7fff, 0x2adf, 0x7c00, 0x1f, },
+				{ 0x7fff, 0x463a, 0x2531, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0xD3:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+				{ 0x7fff, 0x463a, 0x2531, 0x0, },
+				{ 0x7fff, 0x463a, 0x2531, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x9D:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+				{ 0x7fff, 0x7eac, 0x40a0, 0x0, },
+				{ 0x7fff, 0x463a, 0x2531, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x28:
+		case 0x4B:
+		case 0x90:
+		case 0x9A:
+		case 0xBD:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+				{ 0x7fff, 0x3be5, 0x200, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x17:
+		case 0x8B:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+				{ 0x7fff, 0x329f, 0x1f, 0x0, },
+				{ 0x7fff, 0x3be5, 0x200, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x39:
+		case 0x43:
+		case 0x97:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x329f, 0x1f, 0x0, },
+				{ 0x7fff, 0x329f, 0x1f, 0x0, },
+				{ 0x7fff, 0x7eac, 0x40a0, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x01:
+		case 0x10:
+		case 0x29:
+		case 0x52:
+		case 0x5D:
+		case 0x68:
+		case 0x6D:
+		case 0xF6:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x329f, 0x1f, 0x0, },
+				{ 0x7fff, 0x3be5, 0x200, 0x0, },
+				{ 0x7fff, 0x7eac, 0x40a0, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x14:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x3be5, 0x200, 0x0, },
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x70:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x3e0, 0x1600, 0x100, },
+				{ 0x7fff, 0x329f, 0x1f, 0x0, },
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x0C:
+		case 0x16:
+		case 0x35:
+		case 0x67:
+		case 0x75:
+		case 0x92:
+		case 0x99:
+		case 0xB7:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7eac, 0x40a0, 0x0, },
+				{ 0x7fff, 0x7eac, 0x40a0, 0x0, },
+				{ 0x7fff, 0x7eac, 0x40a0, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0xA5:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x3be5, 0x200, 0x0, },
+				{ 0x7fff, 0x3be5, 0x200, 0x0, },
+				{ 0x7fff, 0x7eac, 0x40a0, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0xA2:
+		case 0xF7:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x3be5, 0x200, 0x0, },
+				{ 0x7fff, 0x329f, 0x1f, 0x0, },
+				{ 0x7fff, 0x7eac, 0x40a0, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0xE8:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x0, 0x210, 0x7f40, 0x7fff, },
+				{ 0x0, 0x210, 0x7f40, 0x7fff, },
+				{ 0x0, 0x210, 0x7f40, 0x7fff, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x58:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x5294, 0x2529, 0x0, },
+				{ 0x7fff, 0x5294, 0x2529, 0x0, },
+				{ 0x7fff, 0x5294, 0x2529, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x6F:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7f20, 0x4980, 0x0, },
+				{ 0x7fff, 0x7f20, 0x4980, 0x0, },
+				{ 0x7fff, 0x7f20, 0x4980, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0xAA:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+				{ 0x7fff, 0x3be5, 0x197, 0x0, },
+				{ 0x7fff, 0x3be5, 0x197, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+		case 0x00:
+		case 0x3F:
+		{
+			const uint16_t palette[3][4] =
+			{
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+				{ 0x7fff, 0x7e10, 0x44e7, 0x0, },
+				{ 0x7fff, 0x3be5, 0x197, 0x0, },
+			};
+		   for (int x = 0; x < 3; ++x) {
+				for (int y = 0; y < 4; ++y) {
+					priv->selected_palette[x][y] = palette[x][y];
+				}
+			}
+			break;
+		}
+
+#if 0
 		/* Balloon Kid and Tetris Blast */
 		case 0x71:
 		case 0xFF:
@@ -818,6 +1679,7 @@ void auto_assign_palette(struct priv_t* priv, uint8_t game_checksum)
 			//memcpy(priv->selected_palette, palette, palette_bytes);
 			break;
 		}
+#endif
 
 		default:
 		{
@@ -832,10 +1694,15 @@ void auto_assign_palette(struct priv_t* priv, uint8_t game_checksum)
 					priv->selected_palette[x][y] = palette[x][y];
 				}
 			}
-			//LogMessage("No palette found.");
 			//memcpy(priv->selected_palette, palette, palette_bytes);
 		}
 	}
+}
+
+void SetPaletteImpl(
+	unsigned char selectionIndex)
+{
+	select_palette(&priv, selectionIndex);
 }
 
 void PeanutInitImpl(

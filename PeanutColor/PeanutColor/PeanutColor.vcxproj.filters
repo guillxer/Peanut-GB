@@ -21,6 +21,9 @@
     <ClInclude Include="..\..\minigb_apu.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\raster.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\peanut_sdl.c">

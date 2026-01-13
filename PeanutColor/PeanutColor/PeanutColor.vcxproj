@@ -138,6 +138,7 @@
   <ItemGroup>
     <ClInclude Include="..\..\minigb_apu.h" />
     <ClInclude Include="..\..\peanut_gb.h" />
+    <ClInclude Include="..\..\raster.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\minigb_apu.c" />

@@ -363,6 +363,7 @@ void audio_write(uint16_t addr, uint8_t val);
 
 #include "peanut_gb.h"
 #include "minigb_apu.h"
+#include "raster.h"
 
 char* messageLogPtr;
 
@@ -527,7 +528,11 @@ unsigned char gb_rom_read(
 {
 	const struct priv_t* const p = gb->direct.priv;
 	unsigned char romValue = 0;
+#if !RP2
+	if (true)
+#else
 	if (addr < ((1024 + 512) << 10))
+#endif
 	{
 		romValue = p->rom[addr];
 	}
@@ -2049,6 +2054,7 @@ static unsigned char* cartRomData = NULL;
 static unsigned char* cartRamData = NULL;
 #define COLOR_BUFFER_SIZE DEVICE_WIDTH * DEVICE_HEIGHT * sizeof(unsigned short)
 unsigned short deviceColorBuffer[COLOR_BUFFER_SIZE];
+unsigned short scratchBuffer[EMU_WIDTH * EMU_HEIGHT * sizeof(unsigned short)];
 
 void Save(int saveSize)
 {
@@ -2063,6 +2069,9 @@ void Save(int saveSize)
 	}
 }
 
+unsigned int romFSPipeMem[3];
+unsigned char bankTableMem[numTableEntries * bankSize];
+
 #define main main  // Undo SDL main entry rename
 int main()
 {
@@ -2075,29 +2084,36 @@ int main()
 	char* msg = NULL;
 	int errorNum = 0;
 
-	LoadRom(&cartRomData, "PokemonRed.gb");
+	LoadRom(&cartRomData, "C:\\Peanut-GB\\LoZ.gb");
 
 	PeanutInitImpl(
 		&errorNum,
 		msg,
 		LOG_BUFFER_SIZE,
 		cartRomData,
-		&saveFileSize);
+		&saveFileSize,
+		romFSPipeMem,
+		bankTableMem);
+
+	InitRaster();
 
 	if (saveFileSize > 0)
 	{
 		LoadSave(
 			&cartRamData,
-			"PokemonRed.sav",
+			"C:\\Peanut-GB\\LoZ.sav",
 			saveFileSize);
 	}
 
-	minigb_apu_audio_init(&apu);
-
 	int displaySettings[3] = {0, 0, 0};
+
+	float pos[3] = { 0, 0, 14 };
+	float rot[3] = { 0, 0, 0 };
 
 	bool bRunning = true;
 	unsigned char controllerInput = 0xff;
+
+	float movement = 0.1f;
 	while (bRunning)
 	{
 		SDL_PumpEvents();
@@ -2126,19 +2142,47 @@ int main()
 						controllerInput &= ~JOYPAD_B;
 						break;
 
+					case SDLK_w:
+						rot[1] -= movement;
+						break;
+
+					case SDLK_s:
+						rot[1] += movement;
+						break;
+
+					case SDLK_a:
+						rot[2] -= movement;
+						break;
+
+					case SDLK_d:
+						rot[2] += movement;
+						break;
+
+					case SDLK_n:
+						pos[2] -= movement;
+						break;
+
+					case SDLK_m:
+						pos[2] += movement;
+						break;
+
 					case SDLK_UP:
+						pos[1] -= movement;
 						controllerInput &= ~JOYPAD_UP;
 						break;
 
 					case SDLK_RIGHT:
+						pos[0] += movement;
 						controllerInput &= ~JOYPAD_RIGHT;
 						break;
 
 					case SDLK_DOWN:
+						pos[1] += movement;
 						controllerInput &= ~JOYPAD_DOWN;
 						break;
 
 					case SDLK_LEFT:
+						pos[0] -= movement;
 						controllerInput &= ~JOYPAD_LEFT;
 						break;
 				}
@@ -2199,14 +2243,21 @@ int main()
 			cartRamData,
 			controllerInput);
 
-		ResampleBufferImpl(
-			deviceColorBuffer,
-			displaySettings);
+		if (displaySettings[0] < 2)
+		{
+			ResampleBufferImpl(
+				deviceColorBuffer,
+				scratchBuffer,
+				displaySettings);
+		}
+		else
+		{
+			RenderFrame(&gb, deviceColorBuffer, pos, rot);
+		}
+
 		Present(deviceColorBuffer);
 		UpdateFrame();
 
-		
-		audio_callback(NULL, audioSamples, 0);
 	}
 	SDL_Quit();
 	exit(0);

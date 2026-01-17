@@ -1,13 +1,54 @@
 ﻿  peanut_sdl.c
-C:\Peanut-GB\peanut_gb.h(2105,19): warning C4244: '=': conversion from 'int16_t' to 'uint8_t', possible loss of data
-C:\Peanut-GB\examples\sdl2\peanut_sdl.c(1666,22): warning C4267: '=': conversion from 'size_t' to 'unsigned int', possible loss of data
-C:\Peanut-GB\examples\sdl2\peanut_sdl.c(1705,44): warning C4244: 'function': conversion from 'float' to 'Uint8', possible loss of data
-C:\Peanut-GB\examples\sdl2\peanut_sdl.c(1705,58): warning C4244: 'function': conversion from 'float' to 'Uint8', possible loss of data
-C:\Peanut-GB\examples\sdl2\peanut_sdl.c(1705,74): warning C4244: 'function': conversion from 'float' to 'Uint8', possible loss of data
-C:\Peanut-GB\examples\sdl2\peanut_sdl.c(1760,1): warning C4005: 'main': macro redefinition
+C:\Peanut-GB\peanut_gb.h(2175,19): warning C4244: '=': conversion from 'int16_t' to 'uint8_t', possible loss of data
+C:\Peanut-GB\raster.h(690,47): warning C4101: 't2': unreferenced local variable
+C:\Peanut-GB\raster.h(690,35): warning C4101: 'py': unreferenced local variable
+C:\Peanut-GB\raster.h(690,43): warning C4101: 't1': unreferenced local variable
+C:\Peanut-GB\raster.h(690,39): warning C4101: 'px': unreferenced local variable
+C:\Peanut-GB\raster.h(758,29): warning C4244: 'function': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(759,33): warning C4244: 'function': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(788,29): warning C4244: 'function': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(789,37): warning C4244: 'function': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(984,14): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
+C:\Peanut-GB\raster.h(985,14): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
+C:\Peanut-GB\raster.h(1053,14): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
+C:\Peanut-GB\raster.h(1054,14): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
+C:\Peanut-GB\raster.h(1111,15): warning C4244: 'function': conversion from 'int' to 'float', possible loss of data
+C:\Peanut-GB\raster.h(1111,9): warning C4244: '=': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(1112,15): warning C4244: 'function': conversion from 'int' to 'float', possible loss of data
+C:\Peanut-GB\raster.h(1112,9): warning C4244: '=': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(1113,15): warning C4244: 'function': conversion from 'int' to 'float', possible loss of data
+C:\Peanut-GB\raster.h(1113,9): warning C4244: '=': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(1114,15): warning C4244: 'function': conversion from 'int' to 'float', possible loss of data
+C:\Peanut-GB\raster.h(1114,9): warning C4244: '=': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(1674,20): warning C4133: '=': incompatible types - from 'VertexPUV *' to 'float *'
+C:\Peanut-GB\raster.h(2238,23): warning C4244: '+=': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(2242,23): warning C4244: '-=': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(2253,24): warning C4244: '-=': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(2259,24): warning C4244: '-=': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(2272,56): warning C4244: '-=': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(2288,30): warning C4244: '=': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(2316,24): warning C4133: '=': incompatible types - from 'VertexPUV *' to 'float *'
+C:\Peanut-GB\raster.h(2320,24): warning C4133: '=': incompatible types - from 'VertexPUV *' to 'float *'
+C:\Peanut-GB\raster.h(2324,24): warning C4133: '=': incompatible types - from 'VertexPUV *' to 'float *'
+C:\Peanut-GB\raster.h(2328,24): warning C4133: '=': incompatible types - from 'VertexPUV *' to 'float *'
+C:\Peanut-GB\raster.h(2332,24): warning C4133: '=': incompatible types - from 'VertexPUV *' to 'float *'
+C:\Peanut-GB\raster.h(2337,24): warning C4133: '=': incompatible types - from 'VertexPUV *' to 'float *'
+C:\Peanut-GB\raster.h(2342,24): warning C4133: '=': incompatible types - from 'VertexPUV *' to 'float *'
+C:\Peanut-GB\raster.h(2365,20): warning C4133: '=': incompatible types - from 'VertexPUV *' to 'float *'
+C:\Peanut-GB\raster.h(2396,22): warning C4244: 'function': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(2142,19): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data
+C:\Peanut-GB\raster.h(2394,35): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(2395,35): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\peanut_sdl.c(1748,24): warning C4267: '=': conversion from 'size_t' to 'unsigned int', possible loss of data
+C:\Peanut-GB\peanut_sdl.c(1762,1): warning C4029: declared formal parameter list different from definition
+C:\Peanut-GB\peanut_sdl.c(2005,44): warning C4244: 'function': conversion from 'float' to 'Uint8', possible loss of data
+C:\Peanut-GB\peanut_sdl.c(2005,58): warning C4244: 'function': conversion from 'float' to 'Uint8', possible loss of data
+C:\Peanut-GB\peanut_sdl.c(2005,74): warning C4244: 'function': conversion from 'float' to 'Uint8', possible loss of data
+C:\Peanut-GB\peanut_sdl.c(2077,1): warning C4005: 'main': macro redefinition
 C:\Peanut-GB\SDL2-2.32.8\include\SDL_main.h(143,1): message : see previous definition of 'main'
   Generating code
-  Previous IPDB and IOBJ mismatch, fall back to full compilation.
-  All 28 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  3 of 101 functions ( 3.0%) were compiled, the rest were copied from previous compilation.
+    0 functions were new in current compilation
+    6 functions had inline decision re-evaluated but remain unchanged
   Finished generating code
   PeanutColor.vcxproj -> C:\Peanut-GB\PeanutColor\x64\Release\PeanutColor.exe

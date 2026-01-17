@@ -1501,25 +1501,26 @@ void lcd_draw_line(
 	}
 }
 
+int gbMinWindowLYPerFrame;
+int gbWinTileSelect;
+bool bSkipEMURender;
 void __gb_draw_line(struct gb_s *gb)
 {
-#if SIMPLE_TEST
 	unsigned char pixels[160];
-	for(int i = 0 ; i < 160; ++i)
-	{
-		pixels[i] = i;
-	}
-	for(int j =0; j < 160; ++j)
-	{
-		gb->direct.priv->fb[gb->hram_io[IO_LY]][j] = pixels[j];
-	}
-	//lcd_draw_line(gb, pixels, gb->hram_io[IO_LY]);
 
-#else
-	unsigned char pixels[160];
-	for(int i = 0; i < 160; ++i)
+	if (gb->hram_io[IO_LCDC] & LCDC_WINDOW_ENABLE
+		&& gb->hram_io[IO_LY] >= gb->display.WY
+		&& gb->hram_io[IO_WX] <= 166)
 	{
-		pixels[i] = i;
+		if (gb->hram_io[IO_LY] < gbMinWindowLYPerFrame)
+		{
+			gbMinWindowLYPerFrame = gb->hram_io[IO_LY];
+		}
+		gbWinTileSelect = gb->hram_io[IO_LCDC] & LCDC_TILE_SELECT;
+	}
+	if (bSkipEMURender)
+	{
+		return;
 	}
 
 	/* If LCD not initialised by front-end, don't render anything. */
@@ -1653,6 +1654,8 @@ void __gb_draw_line(struct gb_s *gb)
 		else
 			tile = VRAM_TILES_2 + ((idx + 0x80) % 0x100) * 0x10;
 
+		int ly = gb->hram_io[IO_LY];
+
 		tile += 2 * py;
 
 		// fetch first tile
@@ -1697,9 +1700,8 @@ void __gb_draw_line(struct gb_s *gb)
 		gb->display.window_clear++; // advance window line
 	}
 
-	bool bDrawSprites = true;
 	// draw sprites
-	if(gb->hram_io[IO_LCDC] & LCDC_OBJ_ENABLE && bDrawSprites)
+	if(gb->hram_io[IO_LCDC] & LCDC_OBJ_ENABLE)
 	{
 		uint8_t sprite_number;
 #if PEANUT_GB_HIGH_LCD_ACCURACY
@@ -1848,7 +1850,6 @@ void __gb_draw_line(struct gb_s *gb)
 	}
 	//gb->display.lcd_draw_line(gb, pixels, gb->hram_io[IO_LY]);
 	//lcd_draw_line(gb, pixels, gb->hram_io[IO_LY]);
-#endif
 }
 #endif
 
@@ -3600,6 +3601,7 @@ void __gb_step_cpu(struct gb_s *gb)
 void gb_run_frame(struct gb_s *gb)
 {
 	gb->gb_frame = false;
+	gbMinWindowLYPerFrame = 1024;
 	while(!gb->gb_frame)
 	{
 		__gb_step_cpu(gb);

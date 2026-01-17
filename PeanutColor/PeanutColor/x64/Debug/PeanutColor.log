@@ -1,38 +1,52 @@
 ﻿  peanut_sdl.c
-C:\Peanut-GB\peanut_gb.h(2174,19): warning C4244: '=': conversion from 'int16_t' to 'uint8_t', possible loss of data
-C:\Peanut-GB\raster.h(311,2): warning C4013: 'memcpy' undefined; assuming extern returning int
-C:\Peanut-GB\raster.h(650,44): warning C4244: 'function': conversion from 'float' to 'Uint8', possible loss of data
-C:\Peanut-GB\raster.h(650,58): warning C4244: 'function': conversion from 'float' to 'Uint8', possible loss of data
-C:\Peanut-GB\raster.h(650,74): warning C4244: 'function': conversion from 'float' to 'Uint8', possible loss of data
-C:\Peanut-GB\raster.h(714,47): warning C4101: 't2': unreferenced local variable
-C:\Peanut-GB\raster.h(714,43): warning C4101: 't1': unreferenced local variable
-C:\Peanut-GB\raster.h(768,29): warning C4244: 'function': conversion from 'float' to 'int', possible loss of data
-C:\Peanut-GB\raster.h(769,33): warning C4244: 'function': conversion from 'float' to 'int', possible loss of data
-C:\Peanut-GB\raster.h(794,29): warning C4244: 'function': conversion from 'float' to 'int', possible loss of data
-C:\Peanut-GB\raster.h(795,37): warning C4244: 'function': conversion from 'float' to 'int', possible loss of data
-C:\Peanut-GB\raster.h(982,14): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
-C:\Peanut-GB\raster.h(983,14): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
-C:\Peanut-GB\raster.h(1051,14): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
-C:\Peanut-GB\raster.h(1052,14): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
-C:\Peanut-GB\raster.h(1109,15): warning C4244: 'function': conversion from 'int' to 'float', possible loss of data
-C:\Peanut-GB\raster.h(1109,9): warning C4244: '=': conversion from 'float' to 'int', possible loss of data
-C:\Peanut-GB\raster.h(1110,15): warning C4244: 'function': conversion from 'int' to 'float', possible loss of data
-C:\Peanut-GB\raster.h(1110,9): warning C4244: '=': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\peanut_gb.h(2175,19): warning C4244: '=': conversion from 'int16_t' to 'uint8_t', possible loss of data
+C:\Peanut-GB\raster.h(292,2): warning C4013: 'memcpy' undefined; assuming extern returning int
+C:\Peanut-GB\raster.h(690,47): warning C4101: 't2': unreferenced local variable
+C:\Peanut-GB\raster.h(690,35): warning C4101: 'py': unreferenced local variable
+C:\Peanut-GB\raster.h(690,43): warning C4101: 't1': unreferenced local variable
+C:\Peanut-GB\raster.h(690,39): warning C4101: 'px': unreferenced local variable
+C:\Peanut-GB\raster.h(758,29): warning C4244: 'function': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(759,33): warning C4244: 'function': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(788,29): warning C4244: 'function': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(789,37): warning C4244: 'function': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(984,14): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
+C:\Peanut-GB\raster.h(985,14): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
+C:\Peanut-GB\raster.h(1053,14): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
+C:\Peanut-GB\raster.h(1054,14): warning C4244: '=': conversion from 'int' to 'float', possible loss of data
 C:\Peanut-GB\raster.h(1111,15): warning C4244: 'function': conversion from 'int' to 'float', possible loss of data
 C:\Peanut-GB\raster.h(1111,9): warning C4244: '=': conversion from 'float' to 'int', possible loss of data
 C:\Peanut-GB\raster.h(1112,15): warning C4244: 'function': conversion from 'int' to 'float', possible loss of data
 C:\Peanut-GB\raster.h(1112,9): warning C4244: '=': conversion from 'float' to 'int', possible loss of data
-C:\Peanut-GB\raster.h(1648,20): warning C4133: '=': incompatible types - from 'VertexPUV *' to 'float *'
-C:\Peanut-GB\raster.h(1781,9): warning C4244: 'function': conversion from 'double' to 'float', possible loss of data
-C:\Peanut-GB\raster.h(1818,23): warning C4133: '=': incompatible types - from 'VertexPUV *' to 'float *'
-C:\Peanut-GB\raster.h(1828,22): warning C4133: '=': incompatible types - from 'VertexPUV *' to 'float *'
-C:\Peanut-GB\raster.h(1845,20): warning C4133: '=': incompatible types - from 'VertexPUV *' to 'float *'
-C:\Peanut-GB\raster.h(1759,19): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data
+C:\Peanut-GB\raster.h(1113,15): warning C4244: 'function': conversion from 'int' to 'float', possible loss of data
+C:\Peanut-GB\raster.h(1113,9): warning C4244: '=': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(1114,15): warning C4244: 'function': conversion from 'int' to 'float', possible loss of data
+C:\Peanut-GB\raster.h(1114,9): warning C4244: '=': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(1674,20): warning C4133: '=': incompatible types - from 'VertexPUV *' to 'float *'
+C:\Peanut-GB\raster.h(2238,23): warning C4244: '+=': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(2242,23): warning C4244: '-=': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(2253,24): warning C4244: '-=': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(2259,24): warning C4244: '-=': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(2272,56): warning C4244: '-=': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(2288,30): warning C4244: '=': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(2316,24): warning C4133: '=': incompatible types - from 'VertexPUV *' to 'float *'
+C:\Peanut-GB\raster.h(2320,24): warning C4133: '=': incompatible types - from 'VertexPUV *' to 'float *'
+C:\Peanut-GB\raster.h(2324,24): warning C4133: '=': incompatible types - from 'VertexPUV *' to 'float *'
+C:\Peanut-GB\raster.h(2328,24): warning C4133: '=': incompatible types - from 'VertexPUV *' to 'float *'
+C:\Peanut-GB\raster.h(2332,24): warning C4133: '=': incompatible types - from 'VertexPUV *' to 'float *'
+C:\Peanut-GB\raster.h(2337,24): warning C4133: '=': incompatible types - from 'VertexPUV *' to 'float *'
+C:\Peanut-GB\raster.h(2342,24): warning C4133: '=': incompatible types - from 'VertexPUV *' to 'float *'
+C:\Peanut-GB\raster.h(2365,20): warning C4133: '=': incompatible types - from 'VertexPUV *' to 'float *'
+C:\Peanut-GB\raster.h(2396,22): warning C4244: 'function': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(2142,19): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data
+C:\Peanut-GB\raster.h(2394,35): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
+C:\Peanut-GB\raster.h(2395,35): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
 C:\Peanut-GB\peanut_sdl.c(1748,24): warning C4267: '=': conversion from 'size_t' to 'unsigned int', possible loss of data
-C:\Peanut-GB\peanut_sdl.c(2003,44): warning C4244: 'function': conversion from 'float' to 'Uint8', possible loss of data
-C:\Peanut-GB\peanut_sdl.c(2003,58): warning C4244: 'function': conversion from 'float' to 'Uint8', possible loss of data
-C:\Peanut-GB\peanut_sdl.c(2003,74): warning C4244: 'function': conversion from 'float' to 'Uint8', possible loss of data
-C:\Peanut-GB\peanut_sdl.c(2041,4): warning C4013: 'memset' undefined; assuming extern returning int
-C:\Peanut-GB\peanut_sdl.c(2075,1): warning C4005: 'main': macro redefinition
+C:\Peanut-GB\peanut_sdl.c(1762,1): warning C4029: declared formal parameter list different from definition
+C:\Peanut-GB\peanut_sdl.c(2005,44): warning C4244: 'function': conversion from 'float' to 'Uint8', possible loss of data
+C:\Peanut-GB\peanut_sdl.c(2005,58): warning C4244: 'function': conversion from 'float' to 'Uint8', possible loss of data
+C:\Peanut-GB\peanut_sdl.c(2005,74): warning C4244: 'function': conversion from 'float' to 'Uint8', possible loss of data
+C:\Peanut-GB\peanut_sdl.c(2043,4): warning C4013: 'memset' undefined; assuming extern returning int
+C:\Peanut-GB\peanut_sdl.c(2077,1): warning C4005: 'main': macro redefinition
 C:\Peanut-GB\SDL2-2.32.8\include\SDL_main.h(143,1): message : see previous definition of 'main'
+C:\Peanut-GB\raster.h(1940): warning C4716: 'MurMur32': must return a value
   PeanutColor.vcxproj -> C:\Peanut-GB\PeanutColor\x64\Debug\PeanutColor.exe

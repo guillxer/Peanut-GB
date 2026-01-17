@@ -28,30 +28,11 @@
 
 #define bUseBariFill false
 
+#define BG_PALLET 2
+
 #if !RP2
-void initrender() {
-	// Initialize SDL
-	if (SDL_Init(SDL_INIT_VIDEO) < 0) {
-		printf("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
-	}
-	// Create a window
-	window = SDL_CreateWindow("SDL Draw Line", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, SDL_WINDOW_SHOWN);
-	if (window == NULL) {
-		printf("Window could not be created! SDL_Error: %s\n", SDL_GetError());
-	}
-	// Create a renderer
-	renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-	if (renderer == NULL) {
-		printf("Renderer could not be created! SDL_Error: %s\n", SDL_GetError());
-	}
-}
-void clearscreen(int value) {
-	SDL_PumpEvents();
-	// clear rt
-	SDL_SetRenderDrawColor(renderer, value, value, value, 255);
-	// Clear the screen
-	SDL_RenderClear(renderer);
-}
+void SaveTileData(char* tileDataPath);
+void LoadTileData(char* tileDataPath);
 #endif
 
 #if RP2
@@ -631,28 +612,17 @@ void rastertriangleuv(
 	DrawMeshArgs* meshargs,
 	TriangleUV tri);
 
-#if !RP2
-void clearSceneAndDepth(DrawMeshArgs* meshargs) {
-	for (int x = 0; x < width; ++x) {
-		for (int y = 0; y < height; ++y) {
-			meshargs->color[x * height + y] = 0b0000000000000000;
-			meshargs->depth[x * height + y] = 1000.0f;
-		}
-	}
+
+unsigned short Color555To565(unsigned short color555)
+{
+	unsigned short r = (color555 >> 10) & 0x1f;
+	unsigned short g = (color555 >> 5) & 0x1f;
+	unsigned short b = (color555) & 0x1f;
+	unsigned short color565 = r << 11;
+	color565 |= g << 5 << 1;
+	color565 |= b;
+	return color565;
 }
-void present(DrawMeshArgs* meshargs) {
-	for (int x = 0; x < width; ++x) {
-		for (int y = 0; y < height; ++y) {
-			unsigned int color565 = meshargs->color[x * height + y];
-			float red = (float)((color565 >> 11) & 0x1F) / 31.0f;
-			float green = (float)((color565 >> 5) & 0x3F) / 63.0f;
-			float blue = (float)((color565) & 0x1F) / 31.0f;
-			SDL_SetRenderDrawColor(renderer, 255.0f * red, 255.0f * green, 255.0f * blue, 255);
-			SDL_RenderDrawPoint(renderer, y, x);
-		}
-	}
-}
-#endif
 
 inline int clampi(int val, int min, int max) {
 	int out = val;
@@ -709,40 +679,71 @@ inline vec3 vectorplaneintersect(vec3 plane_p, vec3 plane_n, vec3 lineStart, vec
 	return vecadd(lineStart, lineToIntersect);
 }
 
-unsigned int GetTileIndex(struct gb_s* gb, int tileX, int tileY)
+unsigned int GetTileIndex(
+	struct gb_s* gb,
+	int tileX,
+	int tileY,
+	int scrollX,
+	int scrollY,
+	bool bWindowMode)
 {
 	uint8_t bg_y, disp_x, bg_x, idx, py, px, t1, t2;
 	uint16_t bg_map, tile;
+
+	if (!bWindowMode)
+	{
+		tileX += scrollX;
+		tileY += scrollY;
+	}
 
 	/* Calculate current background line to draw. Constant because
 		 * this function draws only this one line each time it is
 		 * called. */
 	bg_y = tileY * 8;
 
+	if (bWindowMode)
+	{
+		//tileY -= gbMinWindowLYPerFrame;
+	}
+
 	/* Get selected background map address for first tile
 	 * corresponding to current line.
 	 * 0x20 (32) is the width of a background tile, and the bit
 	 * shift is to calculate the address. */
-	bg_map =
-		((gb->hram_io[IO_LCDC] & LCDC_BG_MAP) ?
-			VRAM_BMAP_2 : VRAM_BMAP_1)
-		+ (bg_y >> 3) * 0x20;
+	if (!bWindowMode)
+	{
+		bg_map =
+			((gb->hram_io[IO_LCDC] & LCDC_BG_MAP) ?
+				VRAM_BMAP_2 : VRAM_BMAP_1)
+			+ (bg_y >> 3) * 0x20;
+	}
+	else
+	{
+		bg_map =
+			((gb->hram_io[IO_LCDC] & LCDC_WINDOW_MAP) ?
+				VRAM_BMAP_2 : VRAM_BMAP_1)
+			+ ((bg_y - gbMinWindowLYPerFrame) >> 3) * 0x20;
+	}
 
 	/* The displays (what the player sees) X coordinate, drawn right
 	 * to left. */
 	disp_x = tileX * 8;
+	if (bWindowMode)
+	{
+		disp_x += gb->hram_io[IO_WX] + 7;
+	}
 
 	/* The X coordinate to begin drawing the background at. */
 	bg_x = disp_x + 0; // scroll x as 0
 
 	/* Get tile index for current background tile. */
 	idx = gb->vram[bg_map + (bg_x >> 3)];
-	/* Y coordinate of tile pixel to draw. */
-	py = (bg_y & 0x07);
-	/* X coordinate of tile pixel to draw. */
-	px = 7 - (bg_x & 0x07);
 
-	unsigned char addressMode = 0x10 * 0; // LCDC
+	unsigned char addressMode = gb->hram_io[IO_LCDC] & LCDC_TILE_SELECT; // LCDC
+	if (bWindowMode)
+	{
+		addressMode = gbWinTileSelect;
+	}
 	/* Select addressing mode. */
 	if (addressMode & LCDC_TILE_SELECT)
 		tile = VRAM_TILES_1 + idx * 0x10;
@@ -751,20 +752,9 @@ unsigned int GetTileIndex(struct gb_s* gb, int tileX, int tileY)
 	return tile;
 }
 
-unsigned short Color555To565(unsigned short color555)
+unsigned short SampleTile(struct gb_s* gb, unsigned int tileIndex, float x, float y, bool* alphaClipTile)
 {
-	unsigned short r = (color555 >> 10) & 0x1f;
-	unsigned short g = (color555 >> 5) & 0x1f;
-	unsigned short b = (color555) & 0x1f;
-	unsigned short color565 = r << 11;
-	color565 |= g << 5 << 1;
-	color565 |= b;
-	return color565;
-}
-
-#define BG_PALLET 2
-unsigned short SampleTile(struct gb_s* gb, unsigned int tileIndex, float x, float y)
-{
+	*alphaClipTile = false;
 	unsigned int xInt = clampi(roundf(x * 7), 0, 7);
 	unsigned int yInt = 7 - clampi(roundf(y * 7), 0, 7);
 
@@ -775,6 +765,10 @@ unsigned short SampleTile(struct gb_s* gb, unsigned int tileIndex, float x, floa
 	unsigned char bitMask = 0x1;
 	int paletteLookup = (tileBitPlane0 >> xInt) & bitMask;
 	paletteLookup |= ((tileBitPlane1 >> xInt) & bitMask) << 1;
+	if (paletteLookup == 0)
+	{
+		*alphaClipTile = true;
+	}
 	return Color555To565(gb->direct.priv->selected_palette[BG_PALLET][paletteLookup]);
 }
 
@@ -890,6 +884,7 @@ inline void drawscandepthuv(
 			// TODO flexible shader implementation should go here
 			// Or write attributes to gbuffer
 			vec3 uv = vecadd(vecmuls(uva, (1.0f - t)), vecmuls(uvb, t));
+			bool bTileClip = false;
 			unsigned short rgb565;
 			if (meshargs->shaderstate.UseMeshColor) {
 				rgb565 = meshargs->shaderstate.MeshColor;
@@ -902,7 +897,7 @@ inline void drawscandepthuv(
 				vec2 uvWCorrect = vecdivs2(vec2C(uv.x, uv.y), w);
 				if (meshargs->sampleBG)
 				{
-					rgb565 = SampleTile(meshargs->gb, meshargs->tileIndex, uvWCorrect.x, uvWCorrect.y);
+					rgb565 = SampleTile(meshargs->gb, meshargs->tileIndex, uvWCorrect.x, uvWCorrect.y, &bTileClip);
 				}
 				else
 				{
@@ -914,10 +909,17 @@ inline void drawscandepthuv(
 					}
 				}
 			}
+#if 1
+			if (bTileClip && meshargs->blendstate.AlphaClipEnable)
+			{
+				continue;
+			}
+#else
 			if (meshargs->blendstate.AlphaClipEnable &&
 				meshargs->blendstate.AlphaClipColor == rgb565) {
 				continue;
 			}
+#endif
 			if (!(x >= 0 && x < width && y >= 0 && y < height)) {
 				continue;
 			}
@@ -1153,6 +1155,7 @@ void bariFillTriangle(
 
 			if (meshargs->depth[y * height + x] > depth)
 			{
+				bool bAlphaClipTile = false;
 				unsigned short rgb565;
 				if (meshargs->shaderstate.UseMeshColor) {
 					rgb565 = meshargs->shaderstate.MeshColor;
@@ -1164,7 +1167,7 @@ void bariFillTriangle(
 				else {
 					if (meshargs->sampleBG)
 					{
-						rgb565 = SampleTile(meshargs->gb, meshargs->tileIndex, texcoord0, texcoord1);
+						rgb565 = SampleTile(meshargs->gb, meshargs->tileIndex, texcoord0, texcoord1, &bAlphaClipTile);
 					}
 					else
 					{
@@ -1176,10 +1179,17 @@ void bariFillTriangle(
 						}
 					}
 				}
+#if 1
+				if (meshargs->blendstate.AlphaClipEnable && bAlphaClipTile)
+				{
+					continue;
+				}
+#else
 				if (meshargs->blendstate.AlphaClipEnable &&
 					meshargs->blendstate.AlphaClipColor == rgb565) {
 					continue;
 				}
+#endif
 				meshargs->depth[y * height + x] = depth;
 				meshargs->color[y * height + x] = rgb565;
 			}
@@ -1637,13 +1647,29 @@ void GetMeshArgs(DrawMeshArgs* meshargs, vec3* position, mat44* projmat, mat44* 
 #define TILE_MAP_WIDTH (256 / 8)
 #define TILE_MAP_HEIGHT (256 / 8)
 #define LEVEL_HEIGHT 2.0f
+#define SPRITE_HEIGHT 2.0f
+#define STANDUP_SPRITE_HEIGHT 1.0f
 Mesh tileMesh;
 VertexPUV verts[6];
 Mesh frontMesh;
 VertexPUV frontVerts[6];
 VertexPUV spriteVerts[6];
+VertexPUV rampUp[6];
+VertexPUV rampDown[6];
+VertexPUV rampLeft[6];
+VertexPUV rampRight[6];
+VertexPUV standupSprite[6];
+int selectedTileX;
+int selectedTileY;
+int numEntries;
 void InitRaster()
 {
+	selectedTileX = 0;
+	selectedTileY = 0;
+	numEntries = 0;
+#if !RP2
+	LoadTileData("C:\\Peanut-GB\\LoZTileData.txt");
+#endif
 	tileMesh.numvertices = 6;
 	tileMesh.vertices = verts;
 	verts[0].x = 0.0f;
@@ -1657,32 +1683,26 @@ void InitRaster()
 	verts[2].z = 0.0f;
 	verts[0].uvx = 0.0f;
 	verts[0].uvy = 0.0f;
-	verts[0].z = 0.0f;
 	verts[1].uvx = 1.0f;
 	verts[1].uvy = 0.0f;
-	verts[1].z = 0.0f;
 	verts[2].uvx = 1.0f;
 	verts[2].uvy = 1.0f;
-	verts[2].z = 0.0f;
 
 	verts[3].x = 0.0f;
 	verts[3].y = 0.0f;
 	verts[3].z = 0.0f;
 	verts[3].uvx = 0.0f;
 	verts[3].uvy = 0.0f;
-	verts[3].z = 0.0f;
 	verts[4].x = 0.0f;
 	verts[4].y = 1.0f;
 	verts[4].z = 0.0f;
 	verts[4].uvx = 0.0f;
 	verts[4].uvy = 1.0f;
-	verts[4].z = 0.0f;
 	verts[5].x = 1.0f;
 	verts[5].y = 1.0f;
 	verts[5].z = 0.0f;
 	verts[5].uvx = 1.0f;
 	verts[5].uvy = 1.0f;
-	verts[5].z = 0.0f;
 
 	frontVerts[0].x = 0.0f;
 	frontVerts[0].y = 0.0f;
@@ -1723,8 +1743,8 @@ void InitRaster()
 	spriteVerts[1].y = 0.0f;
 	spriteVerts[1].z = 0.0f;
 	spriteVerts[2].x = 1.0f;
-	spriteVerts[2].y = LEVEL_HEIGHT;
-	spriteVerts[2].z = -LEVEL_HEIGHT;
+	spriteVerts[2].y = SPRITE_HEIGHT;
+	spriteVerts[2].z = -SPRITE_HEIGHT;
 	spriteVerts[0].uvx = 0.0f;
 	spriteVerts[0].uvy = 0.0f;
 	spriteVerts[1].uvx = 1.0f;
@@ -1738,24 +1758,387 @@ void InitRaster()
 	spriteVerts[3].uvx = 0.0f;
 	spriteVerts[3].uvy = 0.0f;
 	spriteVerts[4].x = 0.0f;
-	spriteVerts[4].y = LEVEL_HEIGHT;
-	spriteVerts[4].z = -LEVEL_HEIGHT;
+	spriteVerts[4].y = SPRITE_HEIGHT;
+	spriteVerts[4].z = -SPRITE_HEIGHT;
 	spriteVerts[4].uvx = 0.0f;
 	spriteVerts[4].uvy = 1.0f;
 	spriteVerts[5].x = 1.0f;
-	spriteVerts[5].y = LEVEL_HEIGHT;
-	spriteVerts[5].z = -LEVEL_HEIGHT;
+	spriteVerts[5].y = SPRITE_HEIGHT;
+	spriteVerts[5].z = -SPRITE_HEIGHT;
 	spriteVerts[5].uvx = 1.0f;
 	spriteVerts[5].uvy = 1.0f;
+
+	rampUp[0].x = 0.0f;
+	rampUp[0].y = 0.0f;
+	rampUp[0].z = 0.0f;
+	rampUp[1].x = 1.0f;
+	rampUp[1].y = 0.0f;
+	rampUp[1].z = 0.0f;
+	rampUp[2].x = 1.0f;
+	rampUp[2].y = 1.0f;
+	rampUp[2].z = -LEVEL_HEIGHT;
+	rampUp[0].uvx = 0.0f;
+	rampUp[0].uvy = 0.0f;
+	rampUp[1].uvx = 1.0f;
+	rampUp[1].uvy = 0.0f;
+	rampUp[2].uvx = 1.0f;
+	rampUp[2].uvy = 1.0f;
+	
+	rampUp[3].x = 0.0f;
+	rampUp[3].y = 0.0f;
+	rampUp[3].z = 0.0f;
+	rampUp[3].uvx = 0.0f;
+	rampUp[3].uvy = 0.0f;
+	rampUp[4].x = 0.0f;
+	rampUp[4].y = 1.0f;
+	rampUp[4].z = -LEVEL_HEIGHT;
+	rampUp[4].uvx = 0.0f;
+	rampUp[4].uvy = 1.0f;
+	rampUp[5].x = 1.0f;
+	rampUp[5].y = 1.0f;
+	rampUp[5].z = -LEVEL_HEIGHT;
+	rampUp[5].uvx = 1.0f;
+	rampUp[5].uvy = 1.0f;
+
+	rampDown[0].x = 0.0f;
+	rampDown[0].y = 0.0f;
+	rampDown[0].z = -LEVEL_HEIGHT;
+	rampDown[1].x = 1.0f;
+	rampDown[1].y = 0.0f;
+	rampDown[1].z = -LEVEL_HEIGHT;
+	rampDown[2].x = 1.0f;
+	rampDown[2].y = 1.0f;
+	rampDown[2].z = 0.0f;
+	rampDown[0].uvx = 0.0f;
+	rampDown[0].uvy = 0.0f;
+	rampDown[1].uvx = 1.0f;
+	rampDown[1].uvy = 0.0f;
+	rampDown[2].uvx = 1.0f;
+	rampDown[2].uvy = 1.0f;
+	
+	rampDown[3].x = 0.0f;
+	rampDown[3].y = 0.0f;
+	rampDown[3].z = -LEVEL_HEIGHT;
+	rampDown[3].uvx = 0.0f;
+	rampDown[3].uvy = 0.0f;
+	rampDown[4].x = 0.0f;
+	rampDown[4].y = 1.0f;
+	rampDown[4].z = 0.0f;
+	rampDown[4].uvx = 0.0f;
+	rampDown[4].uvy = 1.0f;
+	rampDown[5].x = 1.0f;
+	rampDown[5].y = 1.0f;
+	rampDown[5].z = 0.0f;
+	rampDown[5].uvx = 1.0f;
+	rampDown[5].uvy = 1.0f;
+
+	rampLeft[0].x = 0.0f;
+	rampLeft[0].y = 0.0f;
+	rampLeft[0].z = 0.0f;
+	rampLeft[1].x = 1.0f;
+	rampLeft[1].y = 0.0f;
+	rampLeft[1].z = -LEVEL_HEIGHT;
+	rampLeft[2].x = 1.0f;
+	rampLeft[2].y = 1.0f;
+	rampLeft[2].z = -LEVEL_HEIGHT;
+	rampLeft[0].uvx = 0.0f;
+	rampLeft[0].uvy = 0.0f;
+	rampLeft[1].uvx = 1.0f;
+	rampLeft[1].uvy = 0.0f;
+	rampLeft[2].uvx = 1.0f;
+	rampLeft[2].uvy = 1.0f;
+
+	rampLeft[3].x = 0.0f;
+	rampLeft[3].y = 0.0f;
+	rampLeft[3].z = 0.0f;
+	rampLeft[3].uvx = 0.0f;
+	rampLeft[3].uvy = 0.0f;
+	rampLeft[4].x = 0.0f;
+	rampLeft[4].y = 1.0f;
+	rampLeft[4].z = 0.0f;
+	rampLeft[4].uvx = 0.0f;
+	rampLeft[4].uvy = 1.0f;
+	rampLeft[5].x = 1.0f;
+	rampLeft[5].y = 1.0f;
+	rampLeft[5].z = -LEVEL_HEIGHT;
+	rampLeft[5].uvx = 1.0f;
+	rampLeft[5].uvy = 1.0f;
+
+	rampRight[0].x = 0.0f;
+	rampRight[0].y = 0.0f;
+	rampRight[0].z = -LEVEL_HEIGHT;
+	rampRight[1].x = 1.0f;
+	rampRight[1].y = 0.0f;
+	rampRight[1].z = 0.0f;
+	rampRight[2].x = 1.0f;
+	rampRight[2].y = 1.0f;
+	rampRight[2].z = 0.0f;
+	rampRight[0].uvx = 0.0f;
+	rampRight[0].uvy = 0.0f;
+	rampRight[1].uvx = 1.0f;
+	rampRight[1].uvy = 0.0f;
+	rampRight[2].uvx = 1.0f;
+	rampRight[2].uvy = 1.0f;
+	
+	rampRight[3].x = 0.0f;
+	rampRight[3].y = 0.0f;
+	rampRight[3].z = -LEVEL_HEIGHT;
+	rampRight[3].uvx = 0.0f;
+	rampRight[3].uvy = 0.0f;
+	rampRight[4].x = 0.0f;
+	rampRight[4].y = 1.0f;
+	rampRight[4].z = -LEVEL_HEIGHT;
+	rampRight[4].uvx = 0.0f;
+	rampRight[4].uvy = 1.0f;
+	rampRight[5].x = 1.0f;
+	rampRight[5].y = 1.0f;
+	rampRight[5].z = 0.0f;
+	rampRight[5].uvx = 1.0f;
+	rampRight[5].uvy = 1.0f;
+
+	standupSprite[0].x = 0.0f;
+	standupSprite[0].y = 0.0f;
+	standupSprite[0].z = 0.0f;
+	standupSprite[1].x = 1.0f;
+	standupSprite[1].y = 0.0f;
+	standupSprite[1].z = 0.0f;
+	standupSprite[2].x = 1.0f;
+	standupSprite[2].y = 1.0f;
+	standupSprite[2].z = -STANDUP_SPRITE_HEIGHT;
+	standupSprite[0].uvx = 0.0f;
+	standupSprite[0].uvy = 0.0f;
+	standupSprite[1].uvx = 1.0f;
+	standupSprite[1].uvy = 0.0f;
+	standupSprite[2].uvx = 1.0f;
+	standupSprite[2].uvy = 1.0f;
+
+	standupSprite[3].x = 0.0f;
+	standupSprite[3].y = 0.0f;
+	standupSprite[3].z = 0.0f;
+	standupSprite[3].uvx = 0.0f;
+	standupSprite[3].uvy = 0.0f;
+	standupSprite[4].x = 0.0f;
+	standupSprite[4].y = 1.0f;
+	standupSprite[4].z = -STANDUP_SPRITE_HEIGHT;
+	standupSprite[4].uvx = 0.0f;
+	standupSprite[4].uvy = 1.0f;
+	standupSprite[5].x = 1.0f;
+	standupSprite[5].y = 1.0f;
+	standupSprite[5].z = -STANDUP_SPRITE_HEIGHT;
+	standupSprite[5].uvx = 1.0f;
+	standupSprite[5].uvy = 1.0f;
 }
 
-void RenderFrame(struct gb_s* gb, unsigned short* colorBuffer, float* pos, float* rot) {
-	//clearscreen(0);
+// Hard code to 16 bytes
+// 8x8 2 bit tiles
+unsigned int MurMur32(struct gb_s* gb, unsigned int tileIndex, int hashSize)
+{
+	for (int i = 0; i < 8 * 2; ++i)
+	{
+		gb->vram[tileIndex + i];
+	}
+}
+unsigned int hash10_bytes(struct gb_s* gb, unsigned int tileIndex, int lengthInts) {
+	unsigned int* tile4Bytes = (unsigned int*)gb->vram;
+	unsigned int h = 2166136261u;
+	for (int i = 0; i < lengthInts; ++i)
+	{
+		h ^= tile4Bytes[tileIndex / sizeof(unsigned int) + i];
+		h *= 16777619;
+	}
+	return h & 0x3ff;
+}
+#define tileHashEntries 4 * 1024
+#define bytesToCompare 16
+#define	DISPLAY_TILES_X 20
+#define DISPLAY_TILES_Y 18
+unsigned char hashMap[tileHashEntries];
+unsigned int tileMap[DISPLAY_TILES_X * DISPLAY_TILES_Y];
+unsigned char tileTypeMap[DISPLAY_TILES_X * DISPLAY_TILES_Y];
+unsigned char tileModifierMap[DISPLAY_TILES_X * DISPLAY_TILES_Y];
+int tileHeight[DISPLAY_TILES_X * DISPLAY_TILES_Y];
 
-	vec3 playerpos = vec3C(0, 0, 10);
-		//vec3C(pos[0], pos[1], pos[2]);
+unsigned char fullTileData[tileHashEntries * 16];
+unsigned char fullTileType[tileHashEntries];
+unsigned char fullTileModifier[tileHashEntries];
 
-	float angleOfView = 90.0f;
+enum TILE_TYPE
+{
+	TILE_TYPE_FLOOR = 0,
+	TILE_TYPE_STAND_UP = 1,
+	TILE_TYPE_WALL_NORTH = 3, // increment height
+	TILE_TYPE_WALL_SOUTH = 4, // side wall do not increment height more than once
+	TILE_TYPE_WALL_EAST = 5,
+	TILE_TYPE_WALL_WEST = 6,
+	TILE_TYPE_ROOF = 11,  // fall back to previous level after room
+};
+
+int GetTileType(struct gb_s* gb, int tileIndex, unsigned char* tileType, unsigned char* tileModifier)
+{
+	*tileType = 0;
+	*tileModifier = 0;
+	// TODO if found just fetch
+	// if not add entry
+	//unsigned int tileHash = hash10_bytes(gb, tileIndex, bytesToCompare / sizeof(unsigned int));
+	//int tileType = hashMap[tileHash];
+	for (int i = 0; i < numEntries; ++i)
+	{
+		bool bMatch = true;
+		for (int j = 0; j < 16; ++j)
+		{
+			if (fullTileData[i * 16 + j] != gb->vram[tileIndex + j])
+			{
+				bMatch = false;
+				break;
+			}
+		}
+		if (bMatch == true)
+		{
+			*tileType = fullTileType[i];
+			*tileModifier = fullTileModifier[i];
+			return i;
+		}
+	}
+	return -1;
+}
+
+#if !RP2
+// PC EMU only
+void SetTileType(struct gb_s* gb, int tileType)
+{
+	bool bWindowMode = gb->hram_io[IO_LCDC] & LCDC_WINDOW_ENABLE &&
+		gb->hram_io[IO_LY] >= gb->display.WY &&
+		gb->hram_io[IO_WX] <= 166;
+	unsigned int tileIndex = GetTileIndex(
+		gb,
+		selectedTileX,
+		selectedTileY,
+		gb->hram_io[IO_SCX] / 8,
+		gb->hram_io[IO_SCY] / 8,
+		bWindowMode && selectedTileY * 8 >= gbMinWindowLYPerFrame);
+	if (bWindowMode&& selectedTileY * 8 >= gbMinWindowLYPerFrame)
+	{
+		return;
+	}
+	//unsigned int tileHash = hash10_bytes(gb, tileIndex, bytesToCompare / sizeof(unsigned int));
+	//hashMap[tileHash] = tileType;
+	unsigned char tileTypeLast = 0;
+	unsigned char tileModifierLast = 0;
+	int index = GetTileType(gb, tileIndex, &tileTypeLast, &tileModifierLast);
+	// Add entry
+	if (index < 0)
+	{
+		for (int i = 0; i < 16; ++i)
+		{
+			fullTileData[numEntries * 16 + i] = gb->vram[tileIndex + i];
+		}
+		fullTileType[numEntries] = tileType;
+		fullTileModifier[numEntries] = 0;
+		numEntries++;
+	}
+	else if (tileType != tileTypeLast)
+	{
+		fullTileType[index] = tileType;
+		fullTileModifier[index] = 0;
+	}
+	else if (tileType == tileTypeLast)
+	{
+		fullTileModifier[index]++;
+		if (fullTileModifier[index] > 3)
+		{
+			fullTileModifier[index] = 0;
+		}
+	}
+	SaveTileData("C:\\Peanut-GB\\LoZTileData.txt");
+}
+void MoveSelectedTile(int xDirection, int yDirection)
+{
+	selectedTileX = min(max(selectedTileX + xDirection, 0), DISPLAY_TILES_X - 1);
+	selectedTileY = min(max(selectedTileY + yDirection, 0), DISPLAY_TILES_Y - 1);
+}
+
+void SaveTileData(char* tileDataPath)
+{
+	FILE* tileFile;
+	errno_t err = fopen_s(&tileFile, tileDataPath, "wb");
+	fwrite(&numEntries, sizeof(int), 1, tileFile);
+	// Tile texture data
+	fwrite(fullTileData, sizeof(unsigned char), sizeof(fullTileData) / sizeof(unsigned char), tileFile);
+	// Tile data that determines how 3d tiles are drawn
+	fwrite(fullTileType, sizeof(unsigned char), sizeof(fullTileType) / sizeof(unsigned char), tileFile);
+	fwrite(fullTileModifier, sizeof(unsigned char), sizeof(fullTileModifier) / sizeof(unsigned char), tileFile);
+	fclose(tileFile);
+}
+
+void LoadTileData(char* tileDataPath)
+{
+	FILE* tileFile;
+	errno_t err = fopen_s(&tileFile, tileDataPath, "rb");
+	if (err == 0 && tileFile)
+	{
+		fread(&numEntries, sizeof(int), 1, tileFile);
+		// Tile texture data
+		fread(fullTileData, sizeof(unsigned char), sizeof(fullTileData) / sizeof(unsigned char), tileFile);
+		// Tile data that determines how 3d tiles are drawn
+		fread(fullTileType, sizeof(unsigned char), sizeof(fullTileType) / sizeof(unsigned char), tileFile);
+		fread(fullTileModifier, sizeof(unsigned char), sizeof(fullTileModifier) / sizeof(unsigned char), tileFile);
+		fclose(tileFile);
+	}
+}
+#endif
+
+void clearSceneAndDepth(struct gb_s* gb, DrawMeshArgs* meshargs) {
+	unsigned short bgColor = Color555To565(gb->direct.priv->selected_palette[BG_PALLET][0x0]);
+	for (int x = 0; x < width; ++x) {
+		for (int y = 0; y < height; ++y) {
+			meshargs->color[x * height + y] = bgColor;
+			meshargs->depth[x * height + y] = 1000.0f;
+		}
+	}
+}
+
+void RenderFrame(struct gb_s* gb, unsigned short* colorBuffer, float* pos, float* rot)
+{
+	int playerX = gb->hram_io[0xFF98 - IO_ADDR];
+	int playerY = gb->hram_io[0xFF99 - IO_ADDR];
+
+	unsigned char messageBox = gb->wram[0xC19F - WRAM_0_ADDR];
+	float defaultDepth = 20.0f;
+	float roll = rot[0];
+	float pitch = rot[1];
+	float yaw = rot[2];
+	float depth = defaultDepth + pos[2];
+
+	float cameraFollowX = playerX / 8.0f - DISPLAY_TILES_X / 2.0f;
+	float cameraFollowY = playerY / 8.0f - DISPLAY_TILES_Y / 2.0f;
+	float zoomFactor = ((10.0f + 4.0f) / depth);
+	cameraFollowX = min(max(cameraFollowX, -3 * zoomFactor), 2 * zoomFactor);
+	cameraFollowY = min(max(cameraFollowY, -2 * zoomFactor), 2 * zoomFactor);
+
+	bool bOrtho = false;
+	bool bWindowMode = gb->hram_io[IO_LCDC] & LCDC_WINDOW_ENABLE &&
+		gb->hram_io[IO_LY] >= gb->display.WY &&
+		gb->hram_io[IO_WX] <= 166;
+
+	bool bUpdateHeight = true;
+	// During full screen menu or message return to top down ortho view
+	if (messageBox != 0x0 ||
+		gbMinWindowLYPerFrame < 128)
+	{
+		bUpdateHeight = false;
+		bOrtho = false;
+		roll = 0.0f;
+		pitch = 0.0f;
+		yaw = 0.0f;
+		depth = defaultDepth;
+		cameraFollowX = 0.0f;
+		cameraFollowY = 0.0f;
+	}
+	float cameraOffsetX = -1.0f;
+	float cameraOffsetY = -1.0f / 2.0f;
+	vec3 playerpos = vec3C(cameraFollowX + cameraOffsetX, cameraFollowY + cameraOffsetY, depth);
+
+	float angleOfView = 50.0f;
 	float fov = 1.0f / tan(angleOfView * 0.5f * PI / 180.0f);
 	float aspectratio = 1.0f;
 	mat44 projmat = mat44C(
@@ -1763,25 +2146,34 @@ void RenderFrame(struct gb_s* gb, unsigned short* colorBuffer, float* pos, float
 		vec4C(0.0f, fov, 0.0f, 0.0f),
 		vec4C(0.0f, 0.0f, (far / (far - near)), ((-far * near) / (far - near))),
 		vec4C(0.0f, 0.0f, 1.0f, 0.0f));
+	if (bOrtho)
+	{
+		float left = -10.0f;
+		float right = 10.0f;
+		float top = 10.0f;
+		float bottom = -10.0f;
+		projmat = mat44C(
+			vec4C(2.0f / (right - left), 0.0f, 0.0f, -(right + left) / (right - left)),
+			vec4C(0.0f, 2.0f / (top - bottom), 0.0f, -(top + bottom) / (top - bottom)),
+			vec4C(0.0f, 0.0f, 2.0f / (far - near), -(far * near) / (far - near)),
+			vec4C(0.0f, 0.0f, 0.0f, 1.0f));
+	}
 	mat44 viewmat = mat44C(
 		vec4C(1.0f, 0.0f, 0.0f, playerpos.x),
 		vec4C(0.0f, 1.0f, 0.0f, playerpos.y),
 		vec4C(0.0f, 0.0f, 1.0f, playerpos.z),
 		vec4C(0.0f, 0.0f, 0.0f, 1.0f));
 
-	float roll = rot[0];
-	float pitch = rot[1];
-	float yaw = rot[2];
 	mat44 rotmat = mat44C(
-		vec4C(1.0f,		0.0f,		0.0,		0.0f),
-		vec4C(0.0f,		cosf(pitch),	-sinf(pitch),	0.0f),
-		vec4C(0.0f,		sinf(pitch),	cosf(pitch),	0.0f),
-		vec4C(0.0f,		0.0f,		0.0f,		1.0f));
+		vec4C(1.0f, 0.0f, 0.0, 0.0f),
+		vec4C(0.0f, cosf(pitch), -sinf(pitch), 0.0f),
+		vec4C(0.0f, sinf(pitch), cosf(pitch), 0.0f),
+		vec4C(0.0f, 0.0f, 0.0f, 1.0f));
 	mat44 rotmat1 = mat44C(
-		vec4C(cos(yaw),		0.0f, sinf(yaw),	0.0f),
-		vec4C(0.0f,		1.0f, 0.0f,		0.0f),
-		vec4C(-sinf(yaw),	0.0f, cosf(yaw),	0.0f),
-		vec4C(0.0f,		0.0f, 0.0f,		1.0f));
+		vec4C(cosf(yaw), -sinf(yaw), 0.0f, 0.0f),
+		vec4C(sinf(yaw), cosf(yaw), 0.0f, 0.0f),
+		vec4C(0.0f, 0.0f, 1.0f, 0.0f),
+		vec4C(0.0f, 0.0f, 0.0f, 1.0f));
 
 	rotmat = matmatmul44(rotmat, rotmat1);
 	viewmat = matmatmul44(viewmat, rotmat);
@@ -1791,51 +2183,179 @@ void RenderFrame(struct gb_s* gb, unsigned short* colorBuffer, float* pos, float
 
 	meshargs.color = colorBuffer;
 	meshargs.gb = gb;
-	clearSceneAndDepth(&meshargs);
 
-	#define	DISPLAY_TILES_X 20
-	#define DISPLAY_TILES_Y 18
+	clearSceneAndDepth(gb, &meshargs);
+
 	// Position base align with scroll register values
-	int scrollX = gb->hram_io[IO_SCX];
-	int scrollY = gb->hram_io[IO_SCY];
 	float positionBase[3] = { DISPLAY_TILES_X / 2.0f, DISPLAY_TILES_Y / 2.0f, 0.0f };
 	float positionOffset[3] = { 0.0f, 0.0f, 0.0f };
 	float meshpos[3] = { 0.0f, 0.0f, 0.0f };
 	// Draw BG tiles
 	meshargs.sampleBG = true;
-	for (int tileY = 0; tileY < DISPLAY_TILES_Y; ++tileY)
-	//for (int tileY = 0; tileY < TILE_MAP_HEIGHT; ++tileY)
 	{
-		for (int tileX = 0; tileX < DISPLAY_TILES_X; ++tileX)
-		//for (int tileX = 0; tileX < TILE_MAP_WIDTH; ++tileX)
+		for (int tileY = 0; tileY < DISPLAY_TILES_Y; ++tileY)
 		{
-			meshargs.tileX = tileX + gb->hram_io[IO_SCX] / 8;
-			meshargs.tileY = tileY + gb->hram_io[IO_SCY] / 8;
-			meshargs.tileIndex = GetTileIndex(gb, meshargs.tileX, meshargs.tileY);
-			if (tileY <= 1 || tileY >= 16)
+			for (int tileX = 0; tileX < DISPLAY_TILES_X; ++tileX)
 			{
-				positionOffset[2] = -LEVEL_HEIGHT;
-				meshargs.vertices = frontVerts;
+				unsigned int tileIndex = GetTileIndex(
+					gb,
+					tileX,
+					tileY,
+					gb->hram_io[IO_SCX] / 8,
+					gb->hram_io[IO_SCY] / 8,
+					bWindowMode && tileY * 8 >= gbMinWindowLYPerFrame);
+				int chacheIndex = tileY * DISPLAY_TILES_X + tileX;
+				tileMap[chacheIndex] = tileIndex;
+				unsigned char tileType = 0;
+				unsigned char tileModifier = 0;
+				int typeIndex = GetTileType(gb, tileIndex, &tileType, &tileModifier);
+				tileTypeMap[chacheIndex] = tileType;
+				tileModifierMap[chacheIndex] = tileModifier;
+			}
+		}
+	}
+	if (bUpdateHeight)
+	{
+		// Process map height and wall sides
+		for (int tileXInd = 0; tileXInd < DISPLAY_TILES_X; ++tileXInd)
+		{
+			bool bHasLastFloorHeight = false;
+			char lastFloorHeight = 0;
+			int currentHeight = 0;
+			int backGroundStart = 2;
+			for (int tileYInd = backGroundStart; tileYInd < DISPLAY_TILES_Y; ++tileYInd)
+			{
+				int tileYFlip = DISPLAY_TILES_Y - 1 - tileYInd;
+				int cacheIndex = tileYFlip * DISPLAY_TILES_X + tileXInd;
+				int cacheIndexLeft = cacheIndex - 1;
+				int cacheIndexRight = cacheIndex + 1;
+				int cacheIndexDown = (tileYFlip + 1) * DISPLAY_TILES_X + tileXInd;
+				tileHeight[cacheIndex] = currentHeight;
+				unsigned char tileType = tileTypeMap[cacheIndex];
+				// Check for modified by neightbor to left and right
+				if (tileType == TILE_TYPE_WALL_NORTH)
+				{
+					currentHeight += LEVEL_HEIGHT;
+				}
+				else if (tileType == TILE_TYPE_WALL_SOUTH)
+				{
+					currentHeight -= LEVEL_HEIGHT;
+					tileHeight[cacheIndex] = currentHeight;
+				}
+				else if (tileType == TILE_TYPE_FLOOR)
+				{
+					// Special wall modifiers to flatten door openings that share tiles with UI and grass
+					// This lowers floors one tile to the left or right of a south wall
+					if (tileTypeMap[cacheIndexLeft] == TILE_TYPE_WALL_SOUTH &&
+						tileModifierMap[cacheIndexLeft] == 1 &&
+						tileXInd > 0) // check left
+					{
+						currentHeight -= LEVEL_HEIGHT;
+					}
+					else if (tileTypeMap[cacheIndexRight] == TILE_TYPE_WALL_SOUTH &&
+						tileModifierMap[cacheIndexRight] == 2 &&
+						tileXInd < DISPLAY_TILES_X - 1) // check right
+					{
+						currentHeight -= LEVEL_HEIGHT;
+					}
+				}
+				else if (tileType == TILE_TYPE_STAND_UP)
+				{
+					// Keep same height but modify position in draw loop
+				}
+				// Reset floor height behind roof
+				if (tileType != TILE_TYPE_ROOF)
+				{
+					if (tileTypeMap[cacheIndexDown] == TILE_TYPE_ROOF &&
+						tileYInd >= backGroundStart)
+					{
+						currentHeight -= tileModifierMap[cacheIndexDown] * LEVEL_HEIGHT;
+						tileHeight[cacheIndex] = currentHeight;
+					}
+				}
+			}
+		}
+		// Horizontal pass
+		// Connect floors and roofs that have changing tile height
+	}
+	else
+	{
+		for (int tileXInd = 0; tileXInd < DISPLAY_TILES_X; ++tileXInd)
+		{
+			for (int tileYInd = 0; tileYInd < DISPLAY_TILES_Y; ++tileYInd)
+			{
+				int cacheIndex = tileYInd * DISPLAY_TILES_X + tileXInd;
+				tileHeight[cacheIndex] = 0.0f;
+			}
+		}
+	}
+
+	{
+		meshargs.shaderstate.MeshColor = 0x001f;
+		for (int tileY = 0; tileY < DISPLAY_TILES_Y; ++tileY)
+		{
+			for (int tileX = 0; tileX < DISPLAY_TILES_X; ++tileX)
+			{
+				meshargs.blendstate.AlphaClipEnable = false;
+				if (tileX == selectedTileX && tileY == selectedTileY)
+				{
+					meshargs.shaderstate.UseMeshColor = true;
+				}
+				else
+				{
+					meshargs.shaderstate.UseMeshColor = false;
+				}
+				int cacheIndex = tileY * DISPLAY_TILES_X + tileX;
+				meshargs.tileX = tileX;
+				meshargs.tileY = tileY;
+				meshargs.tileIndex = tileMap[cacheIndex];
+				unsigned char tileType = tileTypeMap[cacheIndex];
+				positionOffset[2] = -1.0f * tileHeight[cacheIndex];
+				if (!bUpdateHeight)
+				{
+					meshargs.vertices = verts;
+				}
+				else if (tileType == TILE_TYPE_WALL_NORTH)
+				{
+					meshargs.vertices = rampUp;
+				}
+				else if (tileType == TILE_TYPE_WALL_SOUTH)
+				{
+					meshargs.vertices = rampDown;
+				}
+				else if (tileType == TILE_TYPE_WALL_EAST)
+				{
+					meshargs.vertices = rampRight;
+				}
+				else if (tileType == TILE_TYPE_WALL_WEST)
+				{
+					meshargs.vertices = rampLeft;
+				}
+				else if (tileType == TILE_TYPE_STAND_UP)
+				{
+					positionOffset[2] -= tileModifierMap[cacheIndex] * STANDUP_SPRITE_HEIGHT;
+					meshargs.vertices = standupSprite;
+					meshargs.blendstate.AlphaClipEnable = true;
+				}
+				else // floor and roof
+				{
+					meshargs.vertices = verts;
+				}
 				meshpos[0] = positionOffset[0] + positionBase[0];
 				meshpos[1] = positionOffset[1] + positionBase[1];
 				meshpos[2] = positionOffset[2] + positionBase[2];
 				rastermeshoffset(&meshargs, meshpos);
+				positionOffset[0] -= 1.0f;
 			}
-			else
-			{
-				positionOffset[2] = 0.0;
-			}
-			meshargs.vertices = verts;
-			meshpos[0] = positionOffset[0] + positionBase[0];
-			meshpos[1] = positionOffset[1] + positionBase[1];
-			meshpos[2] = positionOffset[2] + positionBase[2];
-			rastermeshoffset(&meshargs, meshpos);
-			positionOffset[0] -= 1.0f;
+			positionOffset[0] = 0.0f;
+			positionOffset[1] -= 1.0f;
 		}
-		positionOffset[0] = 0.0f;
-		positionOffset[1] -= 1.0f;
 	}
 
+	float minX = 0.0f + positionBase[0];
+	float maxX = -1.0f * (DISPLAY_TILES_X - 1) + positionBase[0];
+	float minY = 0.0f + positionBase[1];
+	float maxY = -1.0f * (DISPLAY_TILES_Y - 1) + positionBase[1];
 	// Draw objs
 	positionOffset[0] = 0.0f;
 	positionOffset[1] = 0.0f;
@@ -1864,13 +2384,19 @@ void RenderFrame(struct gb_s* gb, unsigned short* colorBuffer, float* pos, float
 		// Unused sprites are hidden on the top margin when not active
 		if (yPosition > 0.0f)
 		{
+			float spriteDepthBias = 1.0f;
 			positionOffset[0] = (xPosition) / 8.0f + 8 / 8;
 			positionOffset[1] = (yPosition) / 8.0f + 16 / 8;
 			meshargs.tileIndex = tileIndex;
 			meshargs.attributes = attributes;
 			meshpos[0] = adjx - positionOffset[0];
 			meshpos[1] = adjy - positionOffset[1];
-			meshpos[2] = 0.0f;
+			int tileMapX = DISPLAY_TILES_X * ((maxX - meshpos[0]) / (maxX - minX));
+			int tileMapY = DISPLAY_TILES_Y * ((maxY - meshpos[1]) / (maxY - minY));
+			tileMapX = clampi(roundf(DISPLAY_TILES_X - 1 - tileMapX - 0.5f), 0, DISPLAY_TILES_X - 1);
+			tileMapY = clampi(DISPLAY_TILES_Y - 1 - tileMapY, 0, DISPLAY_TILES_Y - 1);
+			int cacheIndex = tileMapY * DISPLAY_TILES_X + tileMapX;
+			meshpos[2] = -1.0f * tileHeight[cacheIndex] - spriteDepthBias;
 			rastermeshoffset(&meshargs, meshpos);
 		}
 	}

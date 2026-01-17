@@ -1,6 +1,6 @@
 
+#define UPSCALE 2
 #define SCREEN_SCALE 1
-#define UPSCALE 1
 #define EMU_WIDTH 160
 #define EMU_HEIGHT 144
 #define DEVICE_WIDTH 128 * SCREEN_SCALE
@@ -1757,8 +1757,10 @@ void PeanutRunImpl(
 	int logBufferSize,
 	unsigned char* cartRomData,
 	unsigned char* cartRamData,
-	unsigned char controllerInput)
+	unsigned char controllerInput,
+	bool bSkipEMURenderArg)
 {
+	bSkipEMURender = bSkipEMURenderArg;
 	priv.rom = cartRomData;
 	priv.cart_ram = cartRamData;
 	gb.direct.joypad = controllerInput;
@@ -2107,13 +2109,14 @@ int main()
 
 	int displaySettings[3] = {0, 0, 0};
 
-	float pos[3] = { 0, 0, 14 };
-	float rot[3] = { 0, 0, 0 };
+	float pos[3] = { 0, 0, 0 };
+	float rot[3] = { 0, 0.5, 0 };
 
 	bool bRunning = true;
 	unsigned char controllerInput = 0xff;
 
 	float movement = 0.1f;
+	float zoom = 1.0f;
 	while (bRunning)
 	{
 		SDL_PumpEvents();
@@ -2159,30 +2162,26 @@ int main()
 						break;
 
 					case SDLK_n:
-						pos[2] -= movement;
+						pos[2] += zoom;
 						break;
 
 					case SDLK_m:
-						pos[2] += movement;
+						pos[2] -= zoom;
 						break;
 
 					case SDLK_UP:
-						pos[1] -= movement;
 						controllerInput &= ~JOYPAD_UP;
 						break;
 
 					case SDLK_RIGHT:
-						pos[0] += movement;
 						controllerInput &= ~JOYPAD_RIGHT;
 						break;
 
 					case SDLK_DOWN:
-						pos[1] += movement;
 						controllerInput &= ~JOYPAD_DOWN;
 						break;
 
 					case SDLK_LEFT:
-						pos[0] -= movement;
 						controllerInput &= ~JOYPAD_LEFT;
 						break;
 				}
@@ -2222,28 +2221,71 @@ int main()
 						controllerInput |= JOYPAD_LEFT;
 						break;
 
-					case SDLK_1:
-						displaySettings[0] = 0;
+					case SDLK_TAB:
+						displaySettings[0]++;
+						if (displaySettings[0] > 2)
+						{
+							displaySettings[0] = 0;
+						}
 						break;
-					case SDLK_2:
-						displaySettings[0] = 1;
+					case SDLK_KP_0:
+						//SetTileType(&gb, 0);
 						break;
-					case SDLK_3:
-						displaySettings[0] = 2;
+					case SDLK_KP_1:
+						SetTileType(&gb, TILE_TYPE_STAND_UP);
+						break;
+					case SDLK_KP_2:
+						SetTileType(&gb, TILE_TYPE_WALL_SOUTH);
+						break;
+					case SDLK_KP_3:
+						//SetTileType(&gb, 2);
+						break;
+					case SDLK_KP_4:
+						SetTileType(&gb, TILE_TYPE_WALL_WEST);
+						break;
+					case SDLK_KP_5:
+						SetTileType(&gb, TILE_TYPE_FLOOR);
+						break;
+					case SDLK_KP_6:
+						SetTileType(&gb, TILE_TYPE_WALL_EAST);
+						break;
+					case SDLK_KP_7:
+						//SetTileType(&gb, 3);
+						break;
+					case SDLK_KP_8:
+						SetTileType(&gb, TILE_TYPE_WALL_NORTH);
+						break;
+					case SDLK_KP_9:
+						SetTileType(&gb, TILE_TYPE_ROOF);
+						break;
+					case SDLK_i:
+						MoveSelectedTile(0, -1);
+						break;
+					case SDLK_j:
+						MoveSelectedTile(-1, 0);
+						break;
+					case SDLK_k:
+						MoveSelectedTile(0, 1);
+						break;
+					case SDLK_l:
+						MoveSelectedTile(1, 0);
 						break;
 				}
 			}
 			break;
 		}
 
+		bool bSkipEMURenderArg = displaySettings[0] == 2;
+
 		PeanutRunImpl(
 			msg,
 			LOG_BUFFER_SIZE,
 			cartRomData,
 			cartRamData,
-			controllerInput);
+			controllerInput,
+			bSkipEMURenderArg);
 
-		if (displaySettings[0] < 2)
+		if (!bSkipEMURenderArg)
 		{
 			ResampleBufferImpl(
 				deviceColorBuffer,
@@ -2252,6 +2294,10 @@ int main()
 		}
 		else
 		{
+			pos[2] = min(max(pos[2], -20.0f), 20.0f);
+			rot[0] = min(max(rot[0], -1.0f), 1.0f);
+			rot[1] = min(max(rot[1], 0.0f), 2.0f);
+			rot[2] = min(max(rot[2], -1.0f), 1.0f);
 			RenderFrame(&gb, deviceColorBuffer, pos, rot);
 		}
 
